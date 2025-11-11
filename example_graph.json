@@ -1,0 +1,114 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "created": "2025-11-11T15:49:00.000Z",
+    "mapYaml": {
+      "resolution": 0.05,
+      "origin": [-10.0, -10.0, 0.0]
+    }
+  },
+  "nodes": [
+    {
+      "id": "node_1",
+      "name": "Warehouse Entry",
+      "x": 200,
+      "y": 200,
+      "worldCoords": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "type": "normal",
+      "noWaiting": false,
+      "isParkingSpot": false,
+      "maxRobots": 2,
+      "notes": "Main entry point"
+    },
+    {
+      "id": "node_2",
+      "name": "Charging Station A",
+      "x": 300,
+      "y": 200,
+      "worldCoords": {
+        "x": 5.0,
+        "y": 0.0
+      },
+      "type": "charging",
+      "noWaiting": false,
+      "isParkingSpot": true,
+      "maxRobots": 1,
+      "notes": "Primary charging station"
+    },
+    {
+      "id": "node_3",
+      "name": "Pickup Zone 1",
+      "x": 250,
+      "y": 150,
+      "worldCoords": {
+        "x": 2.5,
+        "y": 2.5
+      },
+      "type": "pickup",
+      "noWaiting": true,
+      "isParkingSpot": false,
+      "maxRobots": 1,
+      "notes": "High traffic - no waiting allowed"
+    },
+    {
+      "id": "node_4",
+      "name": "Dropoff Zone 1",
+      "x": 250,
+      "y": 250,
+      "worldCoords": {
+        "x": 2.5,
+        "y": -2.5
+      },
+      "type": "dropoff",
+      "noWaiting": false,
+      "isParkingSpot": false,
+      "maxRobots": 2,
+      "notes": "Main delivery point"
+    }
+  ],
+  "paths": [
+    {
+      "id": "path_1",
+      "name": "Entry to Charging",
+      "from": "node_1",
+      "to": "node_2",
+      "speedLimit": 1.5,
+      "bidirectional": true,
+      "width": 1.2,
+      "notes": "Wide corridor"
+    },
+    {
+      "id": "path_2",
+      "name": "Entry to Pickup",
+      "from": "node_1",
+      "to": "node_3",
+      "speedLimit": 1.0,
+      "bidirectional": false,
+      "width": 1.0,
+      "notes": "One-way only"
+    },
+    {
+      "id": "path_3",
+      "name": "Pickup to Dropoff",
+      "from": "node_3",
+      "to": "node_4",
+      "speedLimit": 0.8,
+      "bidirectional": false,
+      "width": 0.8,
+      "notes": "Narrow passage"
+    },
+    {
+      "id": "path_4",
+      "name": "Dropoff to Entry",
+      "from": "node_4",
+      "to": "node_1",
+      "speedLimit": 1.2,
+      "bidirectional": false,
+      "width": 1.0,
+      "notes": "Return path"
+    }
+  ]
+}
