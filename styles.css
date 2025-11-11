@@ -346,3 +346,68 @@ header p {
 ::-webkit-scrollbar-thumb:hover {
     background: #777;
 }
+
+/* Toast notifications */
+.toast {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background-color: #333;
+    color: #fff;
+    padding: 12px 24px;
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    z-index: 10000;
+    opacity: 0;
+    transition: all 0.3s ease;
+    font-size: 14px;
+}
+
+.toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+/* Context menu */
+.context-menu {
+    position: fixed;
+    background-color: #2d2d2d;
+    border: 1px solid #007acc;
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    z-index: 10000;
+    min-width: 180px;
+    padding: 4px 0;
+}
+
+.context-menu-item {
+    padding: 8px 16px;
+    cursor: pointer;
+    color: #e0e0e0;
+    font-size: 14px;
+}
+
+.context-menu-item:hover {
+    background-color: #007acc;
+    color: white;
+}
+
+.context-menu-separator {
+    height: 1px;
+    background-color: #3e3e3e;
+    margin: 4px 0;
+}
+
+/* Mini-map */
+.minimap-canvas {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    border: 2px solid #007acc;
+    border-radius: 4px;
+    background-color: rgba(0, 0, 0, 0.7);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    cursor: pointer;
+    z-index: 5;
+}

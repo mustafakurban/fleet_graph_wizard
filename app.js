@@ -4,6 +4,12 @@ class FleetGraphWizard {
         this.canvas = document.getElementById('mapCanvas');
         this.ctx = this.canvas.getContext('2d');
 
+        // Minimap
+        this.minimapCanvas = document.getElementById('minimapCanvas');
+        this.minimapCtx = this.minimapCanvas.getContext('2d');
+        this.showMinimap = true;
+        this.minimapSize = 200;
+
         // State
         this.mapImage = null;
         this.mapYaml = null;
@@ -38,6 +44,34 @@ class FleetGraphWizard {
         this.showNodePoints = true;
         this.showNodeNames = true;
 
+        // Multi-select
+        this.selectedNodes = [];
+        this.isSelecting = false;
+        this.selectionStart = null;
+        this.selectionBox = null;
+
+        // Hover state
+        this.hoveredNode = null;
+        this.hoveredPath = null;
+        this.tooltipVisible = false;
+        this.hoverTimeout = null;
+
+        // Undo/Redo
+        this.history = [];
+        this.historyIndex = -1;
+        this.maxHistory = 50;
+
+        // Animation
+        this.animationTime = 0;
+        this.selectedNodePulse = 0;
+
+        // Grid
+        this.showGrid = false;
+        this.gridSize = 50; // pixels
+
+        // Clipboard
+        this.clipboard = null;
+
         this.init();
     }
 
@@ -45,7 +79,79 @@ class FleetGraphWizard {
         this.setupCanvas();
         this.setupEventListeners();
         this.disableTools();
+        this.startAnimationLoop();
         this.render();
+    }
+
+    startAnimationLoop() {
+        const animate = (timestamp) => {
+            this.animationTime = timestamp;
+            this.selectedNodePulse = (Math.sin(timestamp / 300) + 1) / 2; // 0 to 1
+            this.render();
+            requestAnimationFrame(animate);
+        };
+        requestAnimationFrame(animate);
+    }
+
+    saveState() {
+        // Remove any states after current index
+        this.history = this.history.slice(0, this.historyIndex + 1);
+
+        // Add new state
+        const state = {
+            nodes: JSON.parse(JSON.stringify(this.nodes)),
+            paths: JSON.parse(JSON.stringify(this.paths)),
+            nodeCounter: this.nodeCounter
+        };
+
+        this.history.push(state);
+
+        // Limit history size
+        if (this.history.length > this.maxHistory) {
+            this.history.shift();
+        } else {
+            this.historyIndex++;
+        }
+    }
+
+    undo() {
+        if (this.historyIndex > 0) {
+            this.historyIndex--;
+            this.restoreState(this.history[this.historyIndex]);
+            this.showToast('Undo');
+        }
+    }
+
+    redo() {
+        if (this.historyIndex < this.history.length - 1) {
+            this.historyIndex++;
+            this.restoreState(this.history[this.historyIndex]);
+            this.showToast('Redo');
+        }
+    }
+
+    restoreState(state) {
+        this.nodes = JSON.parse(JSON.stringify(state.nodes));
+        this.paths = JSON.parse(JSON.stringify(state.paths));
+        this.nodeCounter = state.nodeCounter;
+        this.selectedNodes = [];
+        this.selectedNode = null;
+        this.selectedPath = null;
+        this.render();
+    }
+
+    showToast(message, duration = 2000) {
+        const toast = document.createElement('div');
+        toast.className = 'toast';
+        toast.textContent = message;
+        document.body.appendChild(toast);
+
+        setTimeout(() => toast.classList.add('show'), 10);
+
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 300);
+        }, duration);
     }
 
     setupCanvas() {
@@ -127,6 +233,8 @@ class FleetGraphWizard {
         document.getElementById('zoomInBtn').addEventListener('click', () => this.zoom(1.2));
         document.getElementById('zoomOutBtn').addEventListener('click', () => this.zoom(0.8));
         document.getElementById('resetViewBtn').addEventListener('click', () => this.resetView());
+        document.getElementById('fitAllBtn').addEventListener('click', () => this.fitAll());
+        document.getElementById('focusSelectedBtn').addEventListener('click', () => this.focusSelected());
 
         // Display options
         document.getElementById('showPathLinesToggle').addEventListener('change', (e) => {
@@ -149,12 +257,30 @@ class FleetGraphWizard {
             this.render();
         });
 
+        document.getElementById('showGridToggle').addEventListener('change', (e) => {
+            this.showGrid = e.target.checked;
+            this.render();
+        });
+
+        document.getElementById('showMinimapToggle').addEventListener('change', (e) => {
+            this.showMinimap = e.target.checked;
+            this.minimapCanvas.style.display = e.target.checked ? 'block' : 'none';
+            this.render();
+        });
+
+        // Minimap click to navigate
+        this.minimapCanvas.addEventListener('click', (e) => this.handleMinimapClick(e));
+
         // Canvas events
         this.canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
         this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
         this.canvas.addEventListener('mouseup', (e) => this.handleMouseUp(e));
         this.canvas.addEventListener('wheel', (e) => this.handleWheel(e));
         this.canvas.addEventListener('dblclick', (e) => this.handleDoubleClick(e));
+        this.canvas.addEventListener('contextmenu', (e) => this.handleContextMenu(e));
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => this.handleKeyDown(e));
 
         // Modal controls
         this.setupModalControls();
@@ -478,6 +604,11 @@ class FleetGraphWizard {
     handleMouseDown(e) {
         const point = this.getCanvasPoint(e.clientX, e.clientY);
 
+        // Ignore right-click - it's handled by handleContextMenu
+        if (e.button === 2) {
+            return;
+        }
+
         // Allow panning even if tools are disabled (if map is loaded)
         if (e.button === 1 || (e.button === 0 && e.ctrlKey)) {
             if (this.mapImage) {
@@ -494,14 +625,47 @@ class FleetGraphWizard {
             return;
         }
 
-        // Check if clicking on a node in select mode - enable dragging
+        // Check if clicking on a node in select mode - enable dragging or multi-select
         if (this.currentTool === 'select') {
             const clickedNode = this.findNodeAt(point);
+
             if (clickedNode) {
-                this.isDraggingNode = true;
-                this.draggedNode = clickedNode;
-                this.canvas.style.cursor = 'move';
-                return;
+                // Shift+click for multi-select
+                if (e.shiftKey) {
+                    const index = this.selectedNodes.findIndex(n => n.id === clickedNode.id);
+                    if (index > -1) {
+                        // Remove from selection
+                        this.selectedNodes.splice(index, 1);
+                    } else {
+                        // Add to selection
+                        this.selectedNodes.push(clickedNode);
+                    }
+                    this.render();
+                    return;
+                } else {
+                    // Regular click - start dragging
+                    this.isDraggingNode = true;
+                    this.draggedNode = clickedNode;
+                    this.canvas.style.cursor = 'move';
+
+                    // If clicked node is not in selection, make it the only selected node
+                    if (!this.selectedNodes.some(n => n.id === clickedNode.id)) {
+                        this.selectedNodes = [clickedNode];
+                    }
+                    return;
+                }
+            } else {
+                // Clicking on empty space - only start selection box if Shift is held
+                if (e.shiftKey) {
+                    this.isSelecting = true;
+                    this.selectionStart = point;
+                    this.selectionBox = null;
+                    // Don't clear previous selection when shift is held
+                } else {
+                    // Clear selection when clicking empty space without Shift
+                    this.selectedNodes = [];
+                    this.render();
+                }
             }
         }
 
@@ -544,6 +708,18 @@ class FleetGraphWizard {
             return;
         }
 
+        // Handle selection box dragging
+        if (this.isSelecting && this.selectionStart) {
+            this.selectionBox = {
+                x: Math.min(this.selectionStart.x, point.x),
+                y: Math.min(this.selectionStart.y, point.y),
+                width: Math.abs(point.x - this.selectionStart.x),
+                height: Math.abs(point.y - this.selectionStart.y)
+            };
+            this.render();
+            return;
+        }
+
         // Handle temporary path preview
         if (this.currentTool === 'path' && this.pathStart) {
             this.tempPathEnd = point;
@@ -551,10 +727,33 @@ class FleetGraphWizard {
             return;
         }
 
+        // Update hover state for nodes and paths
+        const previousHoveredNode = this.hoveredNode;
+        const previousHoveredPath = this.hoveredPath;
+
+        this.hoveredNode = this.findNodeAt(point);
+        this.hoveredPath = this.hoveredNode ? null : this.findPathAt(point);
+
+        // Show tooltip after a brief hover
+        if (this.hoveredNode && this.hoveredNode !== previousHoveredNode) {
+            clearTimeout(this.hoverTimeout);
+            this.hoverTimeout = setTimeout(() => {
+                this.tooltipVisible = true;
+                this.render();
+            }, 500);
+        } else if (!this.hoveredNode) {
+            clearTimeout(this.hoverTimeout);
+            this.tooltipVisible = false;
+        }
+
+        // Update cursor and render if hover state changed
+        if (this.hoveredNode !== previousHoveredNode || this.hoveredPath !== previousHoveredPath) {
+            this.render();
+        }
+
         // Show cursor feedback when hovering over nodes in select mode
         if (this.currentTool === 'select') {
-            const hoveredNode = this.findNodeAt(point);
-            if (hoveredNode) {
+            if (this.hoveredNode) {
                 this.canvas.style.cursor = 'move';
             } else {
                 this.canvas.style.cursor = 'crosshair';
@@ -576,6 +775,33 @@ class FleetGraphWizard {
             this.draggedNode = null;
             this.canvas.style.cursor = 'crosshair';
         }
+
+        // Complete selection box
+        if (this.isSelecting && this.selectionBox) {
+            // Find all nodes within the selection box
+            const nodesInBox = this.nodes.filter(node => {
+                return node.x >= this.selectionBox.x &&
+                       node.x <= this.selectionBox.x + this.selectionBox.width &&
+                       node.y >= this.selectionBox.y &&
+                       node.y <= this.selectionBox.y + this.selectionBox.height;
+            });
+
+            // Add to existing selection (since selection box only activates with Shift)
+            nodesInBox.forEach(node => {
+                if (!this.selectedNodes.some(n => n.id === node.id)) {
+                    this.selectedNodes.push(node);
+                }
+            });
+
+            if (this.selectedNodes.length > 0) {
+                this.updateStatus(`Selected ${this.selectedNodes.length} node(s)`);
+            }
+
+            this.isSelecting = false;
+            this.selectionBox = null;
+            this.selectionStart = null;
+            this.render();
+        }
     }
 
     handleDoubleClick(e) {
@@ -596,6 +822,217 @@ class FleetGraphWizard {
             this.showPropertiesPanel('path', clickedPath);
             return;
         }
+    }
+
+    handleContextMenu(e) {
+        e.preventDefault();
+        if (!this.mapImage) return;
+
+        const point = this.getCanvasPoint(e.clientX, e.clientY);
+        const clickedNode = this.findNodeAt(point);
+
+        this.showContextMenu(e.clientX, e.clientY, point, clickedNode);
+    }
+
+    showContextMenu(screenX, screenY, canvasPoint, node) {
+        // Remove any existing context menu
+        const existing = document.querySelector('.context-menu');
+        if (existing) existing.remove();
+
+        const menu = document.createElement('div');
+        menu.className = 'context-menu';
+        menu.style.left = screenX + 'px';
+        menu.style.top = screenY + 'px';
+
+        if (node) {
+            menu.innerHTML = `
+                <div class="context-menu-item" onclick="app.duplicateNode('${node.id}')">Duplicate Node</div>
+                <div class="context-menu-item" onclick="app.deleteNode('${node.id}')">Delete Node</div>
+                <div class="context-menu-separator"></div>
+                <div class="context-menu-item" onclick="app.copyNode('${node.id}')">Copy</div>
+            `;
+        } else {
+            menu.innerHTML = `
+                <div class="context-menu-item" onclick="app.pasteNode(${canvasPoint.x}, ${canvasPoint.y})">Paste</div>
+                <div class="context-menu-separator"></div>
+                <div class="context-menu-item" onclick="app.toggleGrid()">Toggle Grid</div>
+            `;
+        }
+
+        document.body.appendChild(menu);
+
+        // Close menu on click outside
+        const closeMenu = (e) => {
+            if (!menu.contains(e.target)) {
+                menu.remove();
+                document.removeEventListener('click', closeMenu);
+            }
+        };
+        setTimeout(() => document.addEventListener('click', closeMenu), 10);
+    }
+
+    handleKeyDown(e) {
+        // Undo/Redo
+        if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
+            e.preventDefault();
+            this.undo();
+        } else if (e.ctrlKey && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+            e.preventDefault();
+            this.redo();
+        }
+        // Copy/Paste
+        else if (e.ctrlKey && e.key === 'c') {
+            e.preventDefault();
+            this.copySelected();
+        } else if (e.ctrlKey && e.key === 'v') {
+            e.preventDefault();
+            this.pasteNode();
+        }
+        // Delete
+        else if (e.key === 'Delete' || e.key === 'Backspace') {
+            e.preventDefault();
+            this.deleteSelected();
+        }
+        // Select All
+        else if (e.ctrlKey && e.key === 'a') {
+            e.preventDefault();
+            this.selectAll();
+        }
+        // Grid toggle
+        else if (e.key === 'g' && !e.ctrlKey) {
+            this.toggleGrid();
+        }
+    }
+
+    toggleGrid() {
+        this.showGrid = !this.showGrid;
+        this.render();
+        this.showToast(this.showGrid ? 'Grid On' : 'Grid Off');
+    }
+
+    copySelected() {
+        if (this.selectedNodes.length > 0) {
+            this.clipboard = {
+                nodes: JSON.parse(JSON.stringify(this.selectedNodes)),
+                type: 'nodes'
+            };
+            this.showToast(`Copied ${this.selectedNodes.length} node(s)`);
+        } else if (this.selectedNode) {
+            this.clipboard = {
+                nodes: [JSON.parse(JSON.stringify(this.selectedNode))],
+                type: 'nodes'
+            };
+            this.showToast('Copied node');
+        }
+    }
+
+    copyNode(nodeId) {
+        const node = this.nodes.find(n => n.id === nodeId);
+        if (node) {
+            this.clipboard = {
+                nodes: [JSON.parse(JSON.stringify(node))],
+                type: 'nodes'
+            };
+            this.showToast('Copied node');
+        }
+    }
+
+    pasteNode(x, y) {
+        if (!this.clipboard || this.clipboard.type !== 'nodes') {
+            this.showToast('Nothing to paste');
+            return;
+        }
+
+        this.saveState();
+
+        const centerX = x !== undefined ? x : this.canvas.width / (2 * this.scale) - this.offset.x / this.scale;
+        const centerY = y !== undefined ? y : this.canvas.height / (2 * this.scale) - this.offset.y / this.scale;
+
+        const newNodes = [];
+        this.clipboard.nodes.forEach((node, index) => {
+            const newNode = {
+                ...node,
+                id: `node_${this.nodeCounter++}`,
+                name: `${node.name} (copy)`,
+                x: centerX + (index * 50),
+                y: centerY + (index * 50)
+            };
+            this.nodes.push(newNode);
+            newNodes.push(newNode);
+        });
+
+        this.selectedNodes = newNodes;
+        this.showToast(`Pasted ${newNodes.length} node(s)`);
+        this.render();
+    }
+
+    duplicateNode(nodeId) {
+        const node = this.nodes.find(n => n.id === nodeId);
+        if (!node) return;
+
+        this.saveState();
+
+        const newNode = {
+            ...JSON.parse(JSON.stringify(node)),
+            id: `node_${this.nodeCounter++}`,
+            name: `${node.name} (copy)`,
+            x: node.x + 50,
+            y: node.y + 50
+        };
+
+        this.nodes.push(newNode);
+        this.selectedNode = newNode;
+        this.showToast('Node duplicated');
+        this.render();
+    }
+
+    deleteNode(nodeId) {
+        this.saveState();
+        this.nodes = this.nodes.filter(n => n.id !== nodeId);
+        this.paths = this.paths.filter(p => p.from !== nodeId && p.to !== nodeId);
+        this.showToast('Node deleted');
+        this.render();
+    }
+
+    deleteSelected() {
+        if (this.selectedNodes.length > 0) {
+            this.saveState();
+            const ids = this.selectedNodes.map(n => n.id);
+            this.nodes = this.nodes.filter(n => !ids.includes(n.id));
+            this.paths = this.paths.filter(p => !ids.includes(p.from) && !ids.includes(p.to));
+            this.showToast(`Deleted ${ids.length} node(s)`);
+            this.selectedNodes = [];
+            this.render();
+        } else if (this.selectedNode) {
+            this.deleteNode(this.selectedNode.id);
+            this.selectedNode = null;
+        }
+    }
+
+    selectAll() {
+        this.selectedNodes = [...this.nodes];
+        this.showToast(`Selected ${this.nodes.length} nodes`);
+        this.render();
+    }
+
+    addNodeAtPosition(x, y) {
+        this.saveState();
+        const node = {
+            id: `node_${this.nodeCounter++}`,
+            name: `Node ${this.nodeCounter - 1}`,
+            x: x,
+            y: y,
+            type: 'normal',
+            noWaiting: false,
+            isParkingSpot: false,
+            maxRobots: 1,
+            notes: ''
+        };
+
+        this.nodes.push(node);
+        this.selectedNode = node;
+        this.showToast('Node added');
+        this.render();
     }
 
     showPropertiesPanel(type, item) {
@@ -759,7 +1196,70 @@ class FleetGraphWizard {
         this.render();
     }
 
+    fitAll() {
+        if (this.nodes.length === 0 && !this.mapImage) {
+            this.showToast('No nodes or map to fit');
+            return;
+        }
+
+        let minX, maxX, minY, maxY;
+
+        if (this.nodes.length > 0) {
+            // Calculate bounding box of all nodes
+            minX = Math.min(...this.nodes.map(n => n.x));
+            maxX = Math.max(...this.nodes.map(n => n.x));
+            minY = Math.min(...this.nodes.map(n => n.y));
+            maxY = Math.max(...this.nodes.map(n => n.y));
+        } else {
+            // Use map dimensions
+            minX = 0;
+            maxX = this.mapImage.width;
+            minY = 0;
+            maxY = this.mapImage.height;
+        }
+
+        const width = maxX - minX;
+        const height = maxY - minY;
+        const padding = 50; // pixels
+
+        // Calculate scale to fit
+        const scaleX = (this.canvas.width - padding * 2) / width;
+        const scaleY = (this.canvas.height - padding * 2) / height;
+        this.scale = Math.min(scaleX, scaleY, 2); // Max scale of 2
+
+        // Center the content
+        const centerX = (minX + maxX) / 2;
+        const centerY = (minY + maxY) / 2;
+        this.offset.x = this.canvas.width / 2 - centerX * this.scale;
+        this.offset.y = this.canvas.height / 2 - centerY * this.scale;
+
+        this.render();
+        this.showToast('View fitted to content');
+    }
+
+    focusSelected() {
+        const targets = this.selectedNodes.length > 0 ? this.selectedNodes :
+                       (this.selectedNode ? [this.selectedNode] : []);
+
+        if (targets.length === 0) {
+            this.showToast('No node selected');
+            return;
+        }
+
+        // Calculate center of selected nodes
+        const avgX = targets.reduce((sum, n) => sum + n.x, 0) / targets.length;
+        const avgY = targets.reduce((sum, n) => sum + n.y, 0) / targets.length;
+
+        // Center view on selected nodes
+        this.offset.x = this.canvas.width / 2 - avgX * this.scale;
+        this.offset.y = this.canvas.height / 2 - avgY * this.scale;
+
+        this.render();
+        this.showToast(`Focused on ${targets.length} node(s)`);
+    }
+
     addNode(point) {
+        this.saveState();
         const node = {
             id: `node_${this.nodeCounter++}`,
             name: `Node ${this.nodeCounter - 1}`,
@@ -1015,6 +1515,11 @@ class FleetGraphWizard {
         ctx.translate(this.offset.x, this.offset.y);
         ctx.scale(this.scale, this.scale);
 
+        // Draw grid if enabled
+        if (this.showGrid) {
+            this.drawGrid(ctx);
+        }
+
         // Draw map
         if (this.mapImage) {
             ctx.drawImage(this.mapImage, 0, 0);
@@ -1038,12 +1543,203 @@ class FleetGraphWizard {
         // Draw nodes
         this.nodes.forEach(node => this.drawNode(node));
 
+        // Draw selection box
+        if (this.isSelecting && this.selectionBox) {
+            ctx.strokeStyle = 'rgba(0, 122, 204, 0.8)';
+            ctx.fillStyle = 'rgba(0, 122, 204, 0.1)';
+            ctx.lineWidth = 2 / this.scale;
+            ctx.strokeRect(
+                this.selectionBox.x,
+                this.selectionBox.y,
+                this.selectionBox.width,
+                this.selectionBox.height
+            );
+            ctx.fillRect(
+                this.selectionBox.x,
+                this.selectionBox.y,
+                this.selectionBox.width,
+                this.selectionBox.height
+            );
+        }
+
         ctx.restore();
+
+        // Draw tooltip
+        if (this.hoveredNode && this.tooltipVisible) {
+            this.drawTooltip(ctx);
+        }
+
+        // Draw minimap
+        if (this.showMinimap && this.mapImage) {
+            this.renderMinimap();
+        }
+    }
+
+    drawGrid(ctx) {
+        const startX = Math.floor(-this.offset.x / this.scale / this.gridSize) * this.gridSize;
+        const startY = Math.floor(-this.offset.y / this.scale / this.gridSize) * this.gridSize;
+        const endX = startX + (this.canvas.width / this.scale) + this.gridSize;
+        const endY = startY + (this.canvas.height / this.scale) + this.gridSize;
+
+        ctx.strokeStyle = 'rgba(100, 100, 100, 0.2)';
+        ctx.lineWidth = 1 / this.scale;
+
+        // Vertical lines
+        for (let x = startX; x <= endX; x += this.gridSize) {
+            ctx.beginPath();
+            ctx.moveTo(x, startY);
+            ctx.lineTo(x, endY);
+            ctx.stroke();
+        }
+
+        // Horizontal lines
+        for (let y = startY; y <= endY; y += this.gridSize) {
+            ctx.beginPath();
+            ctx.moveTo(startX, y);
+            ctx.lineTo(endX, y);
+            ctx.stroke();
+        }
+    }
+
+    drawTooltip(ctx) {
+        if (!this.hoveredNode) return;
+
+        const node = this.hoveredNode;
+        const worldCoords = this.getWorldCoordinates(node.x, node.y);
+
+        const lines = [
+            `Name: ${node.name}`,
+            `Type: ${node.type}`,
+            `Position: (${worldCoords.x.toFixed(2)}, ${worldCoords.y.toFixed(2)})`,
+            `Max Robots: ${node.maxRobots}`
+        ];
+
+        const padding = 8;
+        const lineHeight = 16;
+        const fontSize = 12;
+        ctx.font = `${fontSize}px Arial`;
+
+        const maxWidth = Math.max(...lines.map(l => ctx.measureText(l).width));
+        const boxWidth = maxWidth + padding * 2;
+        const boxHeight = lines.length * lineHeight + padding * 2;
+
+        // Position tooltip near mouse
+        const tooltipX = (node.x * this.scale) + this.offset.x + 20;
+        const tooltipY = (node.y * this.scale) + this.offset.y + 20;
+
+        // Draw background
+        ctx.fillStyle = 'rgba(45, 45, 45, 0.95)';
+        ctx.fillRect(tooltipX, tooltipY, boxWidth, boxHeight);
+
+        // Draw border
+        ctx.strokeStyle = '#007acc';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(tooltipX, tooltipY, boxWidth, boxHeight);
+
+        // Draw text
+        ctx.fillStyle = '#e0e0e0';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        lines.forEach((line, i) => {
+            ctx.fillText(line, tooltipX + padding, tooltipY + padding + i * lineHeight);
+        });
+    }
+
+    renderMinimap() {
+        const mmCtx = this.minimapCtx;
+        const size = this.minimapSize;
+
+        // Calculate aspect ratio
+        const aspect = this.mapImage.width / this.mapImage.height;
+        let mmWidth, mmHeight;
+        if (aspect > 1) {
+            mmWidth = size;
+            mmHeight = size / aspect;
+        } else {
+            mmWidth = size * aspect;
+            mmHeight = size;
+        }
+
+        // Set canvas size
+        this.minimapCanvas.width = mmWidth;
+        this.minimapCanvas.height = mmHeight;
+
+        // Clear minimap
+        mmCtx.clearRect(0, 0, mmWidth, mmHeight);
+
+        // Draw map
+        mmCtx.drawImage(this.mapImage, 0, 0, mmWidth, mmHeight);
+
+        // Draw nodes
+        mmCtx.fillStyle = '#007acc';
+        this.nodes.forEach(node => {
+            const x = (node.x / this.mapImage.width) * mmWidth;
+            const y = (node.y / this.mapImage.height) * mmHeight;
+            mmCtx.beginPath();
+            mmCtx.arc(x, y, 2, 0, Math.PI * 2);
+            mmCtx.fill();
+        });
+
+        // Draw paths
+        mmCtx.strokeStyle = '#00ff00';
+        mmCtx.lineWidth = 1;
+        this.paths.forEach(path => {
+            const fromNode = this.nodes.find(n => n.id === path.from);
+            const toNode = this.nodes.find(n => n.id === path.to);
+            if (fromNode && toNode) {
+                const x1 = (fromNode.x / this.mapImage.width) * mmWidth;
+                const y1 = (fromNode.y / this.mapImage.height) * mmHeight;
+                const x2 = (toNode.x / this.mapImage.width) * mmWidth;
+                const y2 = (toNode.y / this.mapImage.height) * mmHeight;
+                mmCtx.beginPath();
+                mmCtx.moveTo(x1, y1);
+                mmCtx.lineTo(x2, y2);
+                mmCtx.stroke();
+            }
+        });
+
+        // Draw viewport rectangle
+        const viewportX = (-this.offset.x / this.scale / this.mapImage.width) * mmWidth;
+        const viewportY = (-this.offset.y / this.scale / this.mapImage.height) * mmHeight;
+        const viewportW = (this.canvas.width / this.scale / this.mapImage.width) * mmWidth;
+        const viewportH = (this.canvas.height / this.scale / this.mapImage.height) * mmHeight;
+
+        mmCtx.strokeStyle = '#ffff00';
+        mmCtx.lineWidth = 2;
+        mmCtx.strokeRect(viewportX, viewportY, viewportW, viewportH);
+    }
+
+    handleMinimapClick(e) {
+        const rect = this.minimapCanvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        // Convert minimap coords to map coords
+        const aspect = this.mapImage.width / this.mapImage.height;
+        let mmWidth, mmHeight;
+        if (aspect > 1) {
+            mmWidth = this.minimapSize;
+            mmHeight = this.minimapSize / aspect;
+        } else {
+            mmWidth = this.minimapSize * aspect;
+            mmHeight = this.minimapSize;
+        }
+
+        const mapX = (x / mmWidth) * this.mapImage.width;
+        const mapY = (y / mmHeight) * this.mapImage.height;
+
+        // Center viewport on clicked position
+        this.offset.x = -mapX * this.scale + this.canvas.width / 2;
+        this.offset.y = -mapY * this.scale + this.canvas.height / 2;
+
+        this.render();
     }
 
     drawNode(node) {
         const ctx = this.ctx;
         const radius = 10;
+        const isSelected = this.selectedNode?.id === node.id || this.selectedNodes.some(n => n.id === node.id);
+        const isHovered = this.hoveredNode?.id === node.id;
 
         // Draw node circle (if enabled)
         if (this.showNodePoints) {
@@ -1056,13 +1752,42 @@ class FleetGraphWizard {
                 default: color = '#007acc';
             }
 
+            // Draw glow effect for selected nodes with pulse animation
+            if (isSelected) {
+                const pulseRadius = radius + 8 + (this.selectedNodePulse * 4);
+                ctx.shadowColor = color;
+                ctx.shadowBlur = 20;
+                ctx.fillStyle = `${color}40`; // Semi-transparent
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, pulseRadius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+
+            // Draw hover highlight
+            if (isHovered) {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, radius + 5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Draw main node circle
             ctx.fillStyle = color;
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 2;
+            ctx.strokeStyle = isSelected ? '#ffff00' : '#fff';
+            ctx.lineWidth = isSelected ? 3 : 2;
             ctx.beginPath();
             ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
             ctx.fill();
             ctx.stroke();
+
+            // Draw multi-select indicator (small dot on top-right)
+            if (this.selectedNodes.length > 1 && isSelected) {
+                ctx.fillStyle = '#ff00ff';
+                ctx.beginPath();
+                ctx.arc(node.x + radius - 2, node.y - radius + 2, 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
 
             // Draw indicators
             if (node.noWaiting) {
@@ -1083,23 +1808,26 @@ class FleetGraphWizard {
 
         // Draw name with background for better visibility (if enabled)
         if (this.showNodeNames) {
-            ctx.font = 'bold 13px Arial';
+            ctx.font = 'bold 12px Arial';
             const textWidth = ctx.measureText(node.name).width;
-            const textHeight = 13;
+            const textHeight = 12;
             const padding = 4;
+            const offset = 8; // Additional offset from node edge
 
             // Draw background rectangle
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
             ctx.fillRect(
-                node.x + radius + 3,
-                node.y - radius - textHeight - padding,
+                node.x + radius + offset,
+                node.y - textHeight / 2 - padding,
                 textWidth + padding * 2,
                 textHeight + padding * 2
             );
 
-            // Draw text
-            ctx.fillStyle = '#ffff00'; // Yellow for better visibility
-            ctx.fillText(node.name, node.x + radius + 5, node.y - radius);
+            // Draw text - centered vertically with node
+            ctx.fillStyle = isSelected ? '#ffff00' : '#ffff00'; // Yellow for better visibility
+            ctx.textBaseline = 'middle';
+            ctx.fillText(node.name, node.x + radius + offset + padding, node.y);
+            ctx.textBaseline = 'alphabetic'; // Reset to default
         }
     }
 
@@ -1110,22 +1838,40 @@ class FleetGraphWizard {
         if (!fromNode || !toNode) return;
 
         const ctx = this.ctx;
+        const isHovered = this.hoveredPath?.id === path.id;
+        const isSelected = this.selectedPath?.id === path.id;
 
         // Draw path line (if enabled)
         if (this.showPathLines) {
-            ctx.strokeStyle = '#00ff00';
-            ctx.lineWidth = 3;
+            // Calculate line width based on path width property (convert meters to pixels)
+            const baseWidth = 3;
+            const widthMultiplier = path.width || 1.0;
+            const lineWidth = baseWidth * widthMultiplier;
+
+            // Draw glow for selected/hovered paths
+            if (isSelected || isHovered) {
+                ctx.strokeStyle = isSelected ? 'rgba(255, 255, 0, 0.5)' : 'rgba(255, 255, 255, 0.3)';
+                ctx.lineWidth = lineWidth + 6;
+                ctx.beginPath();
+                ctx.moveTo(fromNode.x, fromNode.y);
+                ctx.lineTo(toNode.x, toNode.y);
+                ctx.stroke();
+            }
+
+            // Draw main path line
+            ctx.strokeStyle = isSelected ? '#ffff00' : '#00ff00';
+            ctx.lineWidth = lineWidth;
             ctx.beginPath();
             ctx.moveTo(fromNode.x, fromNode.y);
             ctx.lineTo(toNode.x, toNode.y);
             ctx.stroke();
 
             // Draw arrow
-            this.drawArrow(fromNode, toNode);
+            this.drawArrow(fromNode, toNode, isSelected);
 
             // Draw reverse arrow if bidirectional
             if (path.bidirectional) {
-                this.drawArrow(toNode, fromNode);
+                this.drawArrow(toNode, fromNode, isSelected);
             }
         }
 
@@ -1156,7 +1902,7 @@ class FleetGraphWizard {
         }
     }
 
-    drawArrow(from, to) {
+    drawArrow(from, to, isSelected = false) {
         const ctx = this.ctx;
         const angle = Math.atan2(to.y - from.y, to.x - from.x);
         const arrowLength = 15;
@@ -1166,7 +1912,7 @@ class FleetGraphWizard {
         const arrowX = to.x - Math.cos(angle) * 15;
         const arrowY = to.y - Math.sin(angle) * 15;
 
-        ctx.fillStyle = '#00ff00';
+        ctx.fillStyle = isSelected ? '#ffff00' : '#00ff00';
         ctx.beginPath();
         ctx.moveTo(arrowX, arrowY);
         ctx.lineTo(

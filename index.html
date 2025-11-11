@@ -35,6 +35,8 @@
                 <button id="zoomInBtn" class="btn">Zoom In</button>
                 <button id="zoomOutBtn" class="btn">Zoom Out</button>
                 <button id="resetViewBtn" class="btn">Reset View</button>
+                <button id="fitAllBtn" class="btn">Fit All</button>
+                <button id="focusSelectedBtn" class="btn">Focus Selected</button>
             </div>
         </div>
 
@@ -66,7 +68,20 @@
                             Names
                         </label>
                     </div>
+                    <div class="viz-section">
+                        <h5>View:</h5>
+                        <label>
+                            <input type="checkbox" id="showGridToggle">
+                            Grid
+                        </label>
+                        <label>
+                            <input type="checkbox" id="showMinimapToggle" checked>
+                            Mini-map
+                        </label>
+                    </div>
                 </div>
+
+                <canvas id="minimapCanvas" class="minimap-canvas"></canvas>
             </div>
 
             <div class="properties-panel">
