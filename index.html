@@ -14,29 +14,44 @@
         </header>
 
         <div class="toolbar">
-            <div class="file-controls">
-                <button id="loadMapBtn" class="btn btn-primary">Load Map (YAML + Image)</button>
+            <div class="file-controls" data-label="📁 Files">
+                <button id="loadMapBtn" class="btn btn-primary" title="Load a map image and YAML file">Load Map</button>
                 <input type="file" id="mapFilesInput" accept=".yaml,.yml,.pgm" multiple style="display: none;">
 
-                <button id="importJsonBtn" class="btn btn-secondary">Import JSON</button>
+                <button id="recentFilesBtn" class="btn" title="View recent maps">Recent ▼</button>
+                <div id="recentFilesDropdown" class="dropdown-menu" style="display: none;"></div>
+
+                <button id="importJsonBtn" class="btn btn-secondary" title="Import previously saved graph JSON">Import</button>
                 <input type="file" id="jsonInput" accept=".json" style="display: none;">
 
-                <button id="exportJsonBtn" class="btn btn-success">Export JSON</button>
+                <button id="exportJsonBtn" class="btn btn-success" title="Export graph to JSON file">Export</button>
+                <button id="exportRos2Btn" class="btn btn-success" title="Export to ROS2 navigation format">ROS2</button>
+
+                <input type="text" id="searchInput" placeholder="Search..." title="Search for nodes or paths by name">
             </div>
 
-            <div class="tool-controls">
-                <button id="addNodeBtn" class="btn tool-btn active" data-tool="node">Add Node</button>
-                <button id="addPathBtn" class="btn tool-btn" data-tool="path">Draw Path</button>
-                <button id="selectBtn" class="btn tool-btn" data-tool="select">Select/Edit</button>
-                <button id="deleteBtn" class="btn tool-btn" data-tool="delete">Delete</button>
+            <div class="tool-controls" data-label="🛠️ Tools">
+                <button id="addNodeBtn" class="btn tool-btn active" data-tool="node" title="Add new nodes by clicking on the map">+ Node</button>
+                <button id="addPathBtn" class="btn tool-btn" data-tool="path" title="Draw paths between nodes">+ Path</button>
+                <button id="selectBtn" class="btn tool-btn" data-tool="select" title="Select and drag nodes (Shift for multi-select)">Select</button>
+                <button id="deleteBtn" class="btn tool-btn" data-tool="delete" title="Delete nodes or paths by clicking">Delete</button>
+                <button id="measureBtn" class="btn tool-btn" data-tool="measure" title="Measure distance between two points">Measure</button>
             </div>
 
-            <div class="view-controls">
-                <button id="zoomInBtn" class="btn">Zoom In</button>
-                <button id="zoomOutBtn" class="btn">Zoom Out</button>
-                <button id="resetViewBtn" class="btn">Reset View</button>
-                <button id="fitAllBtn" class="btn">Fit All</button>
-                <button id="focusSelectedBtn" class="btn">Focus Selected</button>
+            <div class="edit-controls" data-label="✏️ Edit">
+                <button id="alignHorizontalBtn" class="btn" title="Align selected nodes horizontally">↔ H</button>
+                <button id="alignVerticalBtn" class="btn" title="Align selected nodes vertically">↕ V</button>
+                <button id="alignGridBtn" class="btn" title="Align selected nodes to grid">⊞ Grid</button>
+                <button id="bulkEditBtn" class="btn" title="Edit properties for all selected nodes">Bulk</button>
+                <button id="validateGraphBtn" class="btn" title="Validate graph for errors">✓ Validate</button>
+            </div>
+
+            <div class="view-controls" data-label="👁️ View">
+                <button id="zoomInBtn" class="btn" title="Zoom in (+)">+ Zoom</button>
+                <button id="zoomOutBtn" class="btn" title="Zoom out (-)">- Zoom</button>
+                <button id="resetViewBtn" class="btn" title="Reset view to 100%">Reset</button>
+                <button id="fitAllBtn" class="btn" title="Fit all nodes in view">Fit All</button>
+                <button id="focusSelectedBtn" class="btn" title="Center view on selected nodes">Focus</button>
             </div>
         </div>
 
@@ -79,9 +94,39 @@
                             Mini-map
                         </label>
                     </div>
+                    <div class="viz-section">
+                        <h5>Grid Size:</h5>
+                        <label style="display: flex; align-items: center; gap: 8px; margin-left: 8px;">
+                            <input type="number" id="gridSizeInput" value="1.0" min="0.1" max="10" step="0.1"
+                                   style="width: 60px; padding: 4px; font-size: 11px; background-color: #3e3e3e; border: 1px solid #555; border-radius: 4px; color: #e0e0e0;">
+                            <span style="color: #e0e0e0; font-size: 11px;">meters</span>
+                        </label>
+                    </div>
                 </div>
 
                 <canvas id="minimapCanvas" class="minimap-canvas"></canvas>
+
+                <!-- Quick shortcuts reference -->
+                <div id="quickShortcuts" class="quick-shortcuts" style="display: none;">
+                    <div class="shortcuts-header">
+                        <strong>Quick Shortcuts</strong>
+                        <button class="close-shortcuts" onclick="app.toggleQuickShortcuts()">×</button>
+                    </div>
+                    <div class="shortcuts-body">
+                        <div><kbd>N</kbd> Node</div>
+                        <div><kbd>P</kbd> Path</div>
+                        <div><kbd>E</kbd> Select</div>
+                        <div><kbd>M</kbd> Measure</div>
+                        <div><kbd>H</kbd> Align H</div>
+                        <div><kbd>V</kbd> Align V</div>
+                        <div><kbd>B</kbd> Bulk Edit</div>
+                        <div><kbd>T</kbd> Validate</div>
+                        <div><kbd>G</kbd> Grid</div>
+                        <div><kbd>S</kbd> Snap</div>
+                        <div><kbd>Ctrl+F</kbd> Search</div>
+                        <div><kbd>F1</kbd> Help</div>
+                    </div>
+                </div>
             </div>
 
             <div class="properties-panel">
@@ -95,6 +140,7 @@
         <div class="status-bar">
             <span id="statusText">Ready - Load a map to begin</span>
             <span id="coordsText">X: 0, Y: 0</span>
+            <span id="zoomText">Zoom: 100%</span>
             <span id="mapInfoText">No map loaded</span>
         </div>
     </div>
@@ -168,6 +214,116 @@
                     <button type="button" class="btn btn-secondary" id="cancelPathBtn">Cancel</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Bulk Edit Modal -->
+    <div id="bulkEditModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Bulk Edit Nodes (<span id="bulkEditCount">0</span> selected)</h2>
+            <form id="bulkEditForm">
+                <label for="bulkNodeType">Node Type:</label>
+                <select id="bulkNodeType">
+                    <option value="">-- Keep Current --</option>
+                    <option value="normal">Normal</option>
+                    <option value="charging">Charging Station</option>
+                    <option value="pickup">Pickup Point</option>
+                    <option value="dropoff">Dropoff Point</option>
+                </select>
+
+                <label>
+                    <input type="checkbox" id="bulkNoWaiting">
+                    Set "Robot cannot wait" for all
+                </label>
+
+                <label>
+                    <input type="checkbox" id="bulkIsParkingSpot">
+                    Set "Parking spot" for all
+                </label>
+
+                <label for="bulkMaxRobots">Max robots at node:</label>
+                <input type="number" id="bulkMaxRobots" min="1" placeholder="Leave empty to keep current">
+
+                <div class="modal-buttons">
+                    <button type="submit" class="btn btn-primary">Apply to All</button>
+                    <button type="button" class="btn btn-secondary" id="cancelBulkEditBtn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Validation Results Modal -->
+    <div id="validationModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Graph Validation Results</h2>
+            <div id="validationResults"></div>
+            <div class="modal-buttons">
+                <button type="button" class="btn btn-primary" id="closeValidationBtn">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Help Modal for Keyboard Shortcuts -->
+    <div id="helpModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Keyboard Shortcuts</h2>
+            <div class="shortcuts-grid">
+                <div class="shortcut-section">
+                    <h3>General</h3>
+                    <div class="shortcut-item"><kbd>ESC</kbd><span>Cancel operation / Close modals</span></div>
+                    <div class="shortcut-item"><kbd>K</kbd><span>Toggle shortcuts overlay</span></div>
+                    <div class="shortcut-item"><kbd>G</kbd><span>Toggle grid</span></div>
+                    <div class="shortcut-item"><kbd>S</kbd><span>Toggle snap to grid</span></div>
+                    <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>F</kbd><span>Focus search box</span></div>
+                    <div class="shortcut-item"><kbd>?</kbd> or <kbd>F1</kbd><span>Show full help</span></div>
+                </div>
+
+                <div class="shortcut-section">
+                    <h3>Tools</h3>
+                    <div class="shortcut-item"><kbd>N</kbd><span>Add Node tool</span></div>
+                    <div class="shortcut-item"><kbd>P</kbd><span>Draw Path tool</span></div>
+                    <div class="shortcut-item"><kbd>E</kbd><span>Select/Edit tool</span></div>
+                    <div class="shortcut-item"><kbd>D</kbd><span>Delete tool</span></div>
+                    <div class="shortcut-item"><kbd>M</kbd><span>Measure tool</span></div>
+                </div>
+
+                <div class="shortcut-section">
+                    <h3>Edit</h3>
+                    <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>Z</kbd><span>Undo</span></div>
+                    <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>Y</kbd><span>Redo</span></div>
+                    <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>C</kbd><span>Copy selected nodes</span></div>
+                    <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>V</kbd><span>Paste nodes</span></div>
+                    <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>A</kbd><span>Select all nodes</span></div>
+                    <div class="shortcut-item"><kbd>Delete</kbd><span>Delete selected</span></div>
+                    <div class="shortcut-item"><kbd>H</kbd><span>Align Horizontal</span></div>
+                    <div class="shortcut-item"><kbd>V</kbd><span>Align Vertical</span></div>
+                    <div class="shortcut-item"><kbd>B</kbd><span>Bulk Edit</span></div>
+                    <div class="shortcut-item"><kbd>T</kbd><span>Validate Graph</span></div>
+                </div>
+
+                <div class="shortcut-section">
+                    <h3>Selection</h3>
+                    <div class="shortcut-item"><kbd>Shift</kbd>+<kbd>Click</kbd><span>Multi-select nodes</span></div>
+                    <div class="shortcut-item"><kbd>Shift</kbd>+<kbd>Drag</kbd><span>Selection box</span></div>
+                </div>
+
+                <div class="shortcut-section">
+                    <h3>View</h3>
+                    <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>Drag</kbd><span>Pan view</span></div>
+                    <div class="shortcut-item"><kbd>Mouse Wheel</kbd><span>Zoom in/out</span></div>
+                    <div class="shortcut-item"><kbd>Middle Click</kbd>+<kbd>Drag</kbd><span>Pan view</span></div>
+                </div>
+
+                <div class="shortcut-section">
+                    <h3>Mouse Actions</h3>
+                    <div class="shortcut-item"><kbd>Right Click</kbd><span>Context menu</span></div>
+                    <div class="shortcut-item"><kbd>Double Click</kbd><span>Edit node/path properties</span></div>
+                    <div class="shortcut-item"><kbd>Hover</kbd><span>Show tooltips (nodes/paths)</span></div>
+                </div>
+            </div>
         </div>
     </div>
 

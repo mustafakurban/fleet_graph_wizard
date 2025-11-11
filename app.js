@@ -67,10 +67,28 @@ class FleetGraphWizard {
 
         // Grid
         this.showGrid = false;
-        this.gridSize = 50; // pixels
+        this.gridSize = 50; // pixels (will be calculated based on map resolution = 1 meter)
+        this.snapToGrid = false; // Snap nodes to grid
+        this.gridSizeMeters = 1.0; // Grid represents 1 meter in real world
 
         // Clipboard
         this.clipboard = null;
+
+        // Measurement tool
+        this.measureStart = null;
+        this.measureEnd = null;
+
+        // Multi-path selection
+        this.selectedPaths = [];
+
+        // Search
+        this.searchResults = [];
+
+        // Recent files
+        this.recentFiles = this.loadRecentFiles();
+
+        // Quick shortcuts visibility
+        this.quickShortcutsVisible = false;
 
         this.init();
     }
@@ -216,6 +234,34 @@ class FleetGraphWizard {
             this.exportJson();
         });
 
+        document.getElementById('exportRos2Btn').addEventListener('click', () => {
+            this.exportRos2();
+        });
+
+        // Edit controls
+        document.getElementById('alignHorizontalBtn').addEventListener('click', () => this.alignNodesHorizontal());
+        document.getElementById('alignVerticalBtn').addEventListener('click', () => this.alignNodesVertical());
+        document.getElementById('alignGridBtn').addEventListener('click', () => this.alignNodesToGrid());
+        document.getElementById('bulkEditBtn').addEventListener('click', () => this.showBulkEditModal());
+        document.getElementById('validateGraphBtn').addEventListener('click', () => this.validateGraph());
+
+        // Search
+        document.getElementById('searchInput').addEventListener('input', (e) => this.handleSearch(e.target.value));
+
+        // Recent files
+        document.getElementById('recentFilesBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.showRecentFilesDropdown();
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', () => {
+            const dropdown = document.getElementById('recentFilesDropdown');
+            if (dropdown.style.display === 'block') {
+                dropdown.style.display = 'none';
+            }
+        });
+
         // Tool selection
         document.querySelectorAll('.tool-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -266,6 +312,16 @@ class FleetGraphWizard {
             this.showMinimap = e.target.checked;
             this.minimapCanvas.style.display = e.target.checked ? 'block' : 'none';
             this.render();
+        });
+
+        // Grid size input
+        document.getElementById('gridSizeInput').addEventListener('input', (e) => {
+            const newSize = parseFloat(e.target.value);
+            if (newSize > 0 && newSize <= 10) {
+                this.gridSizeMeters = newSize;
+                this.updateGridSize();
+                this.render();
+            }
         });
 
         // Minimap click to navigate
@@ -326,6 +382,58 @@ class FleetGraphWizard {
                 this.render();
             }
         });
+
+        // Bulk edit modal
+        const bulkEditModal = document.getElementById('bulkEditModal');
+        const bulkEditForm = document.getElementById('bulkEditForm');
+        const closeBulkEditModal = () => {
+            bulkEditModal.style.display = 'none';
+        };
+
+        bulkEditModal.querySelector('.close').addEventListener('click', closeBulkEditModal);
+        document.getElementById('cancelBulkEditBtn').addEventListener('click', closeBulkEditModal);
+
+        bulkEditForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.applyBulkEdit();
+            closeBulkEditModal();
+            this.render();
+        });
+
+        // Validation modal
+        const validationModal = document.getElementById('validationModal');
+        const closeValidationModal = () => {
+            validationModal.style.display = 'none';
+        };
+
+        validationModal.querySelector('.close').addEventListener('click', closeValidationModal);
+        document.getElementById('closeValidationBtn').addEventListener('click', closeValidationModal);
+
+        validationModal.addEventListener('click', (e) => {
+            if (e.target === validationModal) {
+                closeValidationModal();
+            }
+        });
+
+        // Help modal
+        const helpModal = document.getElementById('helpModal');
+        const closeHelpModal = () => {
+            helpModal.style.display = 'none';
+        };
+
+        helpModal.querySelector('.close').addEventListener('click', closeHelpModal);
+
+        // Close help modal on click outside
+        helpModal.addEventListener('click', (e) => {
+            if (e.target === helpModal) {
+                closeHelpModal();
+            }
+        });
+    }
+
+    showHelpModal() {
+        const helpModal = document.getElementById('helpModal');
+        helpModal.style.display = 'block';
     }
 
     async loadMapFiles(files) {
@@ -377,6 +485,7 @@ class FleetGraphWizard {
                     console.log('Found matching image:', matchedImage.name);
                     await this.loadMapImage(matchedImage);
                     this.enableTools();
+                    this.saveToRecentFiles(yamlFile.name, this.mapYaml);
                     this.updateStatus('Map and YAML loaded successfully!');
                 } else if (imageFiles.length > 0) {
                     // Use the first image file found
@@ -388,6 +497,7 @@ class FleetGraphWizard {
                     if (proceed) {
                         await this.loadMapImage(imageFiles[0]);
                         this.enableTools();
+                        this.saveToRecentFiles(yamlFile.name, this.mapYaml);
                         this.updateStatus('Map and YAML loaded successfully!');
                     } else {
                         this.updateStatus(`YAML loaded. Please select the correct image: ${expectedImageName}`);
@@ -406,6 +516,7 @@ class FleetGraphWizard {
                 if (imageFiles.length > 0) {
                     await this.loadMapImage(imageFiles[0]);
                     this.enableTools();
+                    this.saveToRecentFiles(yamlFile.name, this.mapYaml);
                     this.updateStatus('Map and YAML loaded successfully!');
                 } else {
                     this.updateStatus('YAML loaded (no image specified)');
@@ -440,6 +551,7 @@ class FleetGraphWizard {
                 img.onload = () => {
                     console.log('Image loaded:', img.width, 'x', img.height);
                     this.mapImage = img;
+                    this.updateGridSize(true);
                     this.resetView();
                     this.render();
                     resolve();
@@ -490,6 +602,7 @@ class FleetGraphWizard {
                     img.onload = () => {
                         console.log('PGM image loaded:', img.width, 'x', img.height);
                         this.mapImage = img;
+                        this.updateGridSize(true);
                         this.resetView();
                         this.render();
                         resolve();
@@ -677,10 +790,13 @@ class FleetGraphWizard {
                 this.handlePathDrawing(point);
                 break;
             case 'select':
-                this.handleSelection(point);
+                this.handleSelection(point, e.shiftKey);
                 break;
             case 'delete':
                 this.handleDeletion(point);
+                break;
+            case 'measure':
+                this.handleMeasurement(point);
                 break;
         }
     }
@@ -702,8 +818,9 @@ class FleetGraphWizard {
 
         // Handle node dragging
         if (this.isDraggingNode && this.draggedNode) {
-            this.draggedNode.x = point.x;
-            this.draggedNode.y = point.y;
+            const snappedPoint = this.snapPointToGrid(point);
+            this.draggedNode.x = snappedPoint.x;
+            this.draggedNode.y = snappedPoint.y;
             this.render();
             return;
         }
@@ -723,6 +840,13 @@ class FleetGraphWizard {
         // Handle temporary path preview
         if (this.currentTool === 'path' && this.pathStart) {
             this.tempPathEnd = point;
+            this.render();
+            return;
+        }
+
+        // Handle temporary measurement preview
+        if (this.currentTool === 'measure' && this.measureStart) {
+            this.measureEnd = point;
             this.render();
             return;
         }
@@ -852,10 +976,16 @@ class FleetGraphWizard {
                 <div class="context-menu-item" onclick="app.copyNode('${node.id}')">Copy</div>
             `;
         } else {
+            const gridLabel = this.mapYaml && this.mapYaml.resolution
+                ? `Toggle Grid - ${this.gridSizeMeters}m (G)`
+                : 'Toggle Grid (G)';
+            const snapLabel = `Snap to Grid: ${this.snapToGrid ? 'ON' : 'OFF'} (S)`;
+
             menu.innerHTML = `
                 <div class="context-menu-item" onclick="app.pasteNode(${canvasPoint.x}, ${canvasPoint.y})">Paste</div>
                 <div class="context-menu-separator"></div>
-                <div class="context-menu-item" onclick="app.toggleGrid()">Toggle Grid</div>
+                <div class="context-menu-item" onclick="app.toggleGrid()">${gridLabel}</div>
+                <div class="context-menu-item" onclick="app.toggleSnapToGrid()">${snapLabel}</div>
             `;
         }
 
@@ -872,6 +1002,13 @@ class FleetGraphWizard {
     }
 
     handleKeyDown(e) {
+        // ESC key - Cancel operations and close modals
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            this.handleEscapeKey();
+            return;
+        }
+
         // Undo/Redo
         if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
             e.preventDefault();
@@ -902,12 +1039,201 @@ class FleetGraphWizard {
         else if (e.key === 'g' && !e.ctrlKey) {
             this.toggleGrid();
         }
+        // Snap to grid toggle
+        else if (e.key === 's' && !e.ctrlKey) {
+            this.toggleSnapToGrid();
+        }
+        // Alignment shortcuts
+        else if (e.key === 'h' && !e.ctrlKey) {
+            e.preventDefault();
+            this.alignNodesHorizontal();
+        }
+        else if (e.key === 'v' && !e.ctrlKey) {
+            e.preventDefault();
+            this.alignNodesVertical();
+        }
+        // Bulk edit
+        else if (e.key === 'b' && !e.ctrlKey) {
+            e.preventDefault();
+            this.showBulkEditModal();
+        }
+        // Validate
+        else if (e.key === 't' && !e.ctrlKey) {
+            e.preventDefault();
+            this.validateGraph();
+        }
+        // Tools
+        else if (e.key === 'n' && !e.ctrlKey) {
+            e.preventDefault();
+            this.setTool('node');
+        }
+        else if (e.key === 'p' && !e.ctrlKey) {
+            e.preventDefault();
+            this.setTool('path');
+        }
+        else if (e.key === 'e' && !e.ctrlKey) {
+            e.preventDefault();
+            this.setTool('select');
+        }
+        else if (e.key === 'd' && !e.ctrlKey) {
+            e.preventDefault();
+            this.setTool('delete');
+        }
+        else if (e.key === 'm' && !e.ctrlKey) {
+            e.preventDefault();
+            this.setTool('measure');
+        }
+        // Search focus
+        else if (e.key === 'f' && e.ctrlKey) {
+            e.preventDefault();
+            document.getElementById('searchInput').focus();
+        }
+        // Toggle quick shortcuts
+        else if (e.key === 'k' && !e.ctrlKey) {
+            e.preventDefault();
+            this.toggleQuickShortcuts();
+        }
+        // Help
+        else if (e.key === '?' || e.key === 'F1') {
+            e.preventDefault();
+            this.showHelpModal();
+        }
+    }
+
+    toggleQuickShortcuts() {
+        this.quickShortcutsVisible = !this.quickShortcutsVisible;
+        const overlay = document.getElementById('quickShortcuts');
+        overlay.style.display = this.quickShortcutsVisible ? 'block' : 'none';
+        if (this.quickShortcutsVisible) {
+            this.showToast('Press K to toggle shortcuts overlay');
+        }
+    }
+
+    setTool(tool) {
+        document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+        const btn = document.querySelector(`[data-tool="${tool}"]`);
+        if (btn) {
+            btn.classList.add('active');
+            this.currentTool = tool;
+            this.updateStatus(`Tool: ${tool}`);
+        }
+    }
+
+    handleEscapeKey() {
+        // Close any open modals
+        const nodeModal = document.getElementById('nodeModal');
+        const pathModal = document.getElementById('pathModal');
+        const helpModal = document.getElementById('helpModal');
+
+        if (helpModal.style.display === 'block') {
+            helpModal.style.display = 'none';
+            return;
+        }
+
+        if (nodeModal.style.display === 'block') {
+            nodeModal.style.display = 'none';
+            this.selectedNode = null;
+            this.showToast('Cancelled');
+            return;
+        }
+        if (pathModal.style.display === 'block') {
+            pathModal.style.display = 'none';
+            this.selectedPath = null;
+            this.showToast('Cancelled');
+            return;
+        }
+
+        // Close context menu
+        const contextMenu = document.querySelector('.context-menu');
+        if (contextMenu) {
+            contextMenu.remove();
+            return;
+        }
+
+        // Cancel path drawing
+        if (this.currentTool === 'path' && this.pathStart) {
+            this.pathStart = null;
+            this.tempPathEnd = null;
+            this.updateStatus('Path drawing cancelled');
+            this.showToast('Path drawing cancelled');
+            this.render();
+            return;
+        }
+
+        // Cancel measurement
+        if (this.currentTool === 'measure' && this.measureStart) {
+            this.measureStart = null;
+            this.measureEnd = null;
+            this.updateStatus('Measurement cancelled');
+            this.showToast('Measurement cancelled');
+            this.render();
+            return;
+        }
+
+        // Clear selection
+        if (this.selectedNodes.length > 0) {
+            this.selectedNodes = [];
+            this.updateStatus('Selection cleared');
+            this.render();
+            return;
+        }
+
+        // Cancel node dragging
+        if (this.isDraggingNode) {
+            this.isDraggingNode = false;
+            this.draggedNode = null;
+            this.canvas.style.cursor = 'crosshair';
+            this.render();
+            return;
+        }
+    }
+
+    updateGridSize(showToast = false) {
+        // Calculate grid size in pixels to represent the specified meters
+        if (this.mapYaml && this.mapYaml.resolution) {
+            // resolution is meters/pixel, so to get pixels per meter:
+            this.gridSize = this.gridSizeMeters / this.mapYaml.resolution;
+            console.log(`Grid updated: ${this.gridSizeMeters}m = ${this.gridSize.toFixed(1)} pixels (resolution: ${this.mapYaml.resolution}m/px)`);
+            if (showToast) {
+                this.showToast(`Grid: ${this.gridSizeMeters}m spacing`);
+            }
+        } else {
+            // Default to 50 pixels if no resolution available
+            this.gridSize = 50;
+            console.log('Grid using default 50 pixels (no resolution data)');
+        }
+
+        // Update the input field
+        const gridSizeInput = document.getElementById('gridSizeInput');
+        if (gridSizeInput) {
+            gridSizeInput.value = this.gridSizeMeters.toFixed(1);
+        }
     }
 
     toggleGrid() {
         this.showGrid = !this.showGrid;
         this.render();
-        this.showToast(this.showGrid ? 'Grid On' : 'Grid Off');
+        const gridInfo = this.mapYaml && this.mapYaml.resolution
+            ? `Grid: ${this.gridSizeMeters}m spacing`
+            : 'Grid On';
+        this.showToast(this.showGrid ? gridInfo : 'Grid Off');
+    }
+
+    toggleSnapToGrid() {
+        this.snapToGrid = !this.snapToGrid;
+        const snapInfo = this.snapToGrid
+            ? `Snap to Grid: ON (${this.gridSizeMeters}m)`
+            : 'Snap to Grid: OFF';
+        this.showToast(snapInfo);
+    }
+
+    snapPointToGrid(point) {
+        if (!this.snapToGrid) return point;
+
+        return {
+            x: Math.round(point.x / this.gridSize) * this.gridSize,
+            y: Math.round(point.y / this.gridSize) * this.gridSize
+        };
     }
 
     copySelected() {
@@ -1017,11 +1343,12 @@ class FleetGraphWizard {
 
     addNodeAtPosition(x, y) {
         this.saveState();
+        const snappedPoint = this.snapPointToGrid({x, y});
         const node = {
             id: `node_${this.nodeCounter++}`,
             name: `Node ${this.nodeCounter - 1}`,
-            x: x,
-            y: y,
+            x: snappedPoint.x,
+            y: snappedPoint.y,
             type: 'normal',
             noWaiting: false,
             isParkingSpot: false,
@@ -1175,6 +1502,7 @@ class FleetGraphWizard {
         this.offset.y = e.clientY - (point.y * this.scale * zoomFactor);
         this.scale *= zoomFactor;
 
+        this.updateZoomDisplay();
         this.render();
     }
 
@@ -1187,13 +1515,41 @@ class FleetGraphWizard {
         this.offset.y = centerY - (point.y * this.scale * factor);
         this.scale *= factor;
 
+        this.updateZoomDisplay();
         this.render();
     }
 
     resetView() {
         this.scale = 1;
         this.offset = { x: 0, y: 0 };
+        this.updateZoomDisplay();
         this.render();
+    }
+
+    updateZoomDisplay() {
+        const zoomPercent = Math.round(this.scale * 100);
+        document.getElementById('zoomText').textContent = `Zoom: ${zoomPercent}%`;
+    }
+
+    calculatePathDistance(fromNode, toNode) {
+        // Calculate pixel distance
+        const dx = toNode.x - fromNode.x;
+        const dy = toNode.y - fromNode.y;
+        const pixelDistance = Math.sqrt(dx * dx + dy * dy);
+
+        // Convert to meters if YAML data is available
+        if (this.mapYaml && this.mapYaml.resolution) {
+            const metersDistance = pixelDistance * this.mapYaml.resolution;
+            return {
+                pixels: pixelDistance,
+                meters: metersDistance
+            };
+        }
+
+        return {
+            pixels: pixelDistance,
+            meters: null
+        };
     }
 
     fitAll() {
@@ -1233,6 +1589,7 @@ class FleetGraphWizard {
         this.offset.x = this.canvas.width / 2 - centerX * this.scale;
         this.offset.y = this.canvas.height / 2 - centerY * this.scale;
 
+        this.updateZoomDisplay();
         this.render();
         this.showToast('View fitted to content');
     }
@@ -1260,11 +1617,12 @@ class FleetGraphWizard {
 
     addNode(point) {
         this.saveState();
+        const snappedPoint = this.snapPointToGrid(point);
         const node = {
             id: `node_${this.nodeCounter++}`,
             name: `Node ${this.nodeCounter - 1}`,
-            x: point.x,
-            y: point.y,
+            x: snappedPoint.x,
+            y: snappedPoint.y,
             type: 'normal',
             noWaiting: false,
             isParkingSpot: false,
@@ -1320,7 +1678,7 @@ class FleetGraphWizard {
         this.render();
     }
 
-    handleSelection(point) {
+    handleSelection(point, shiftKey = false) {
         // Try to select node first
         const node = this.findNodeAt(point);
         if (node) {
@@ -1332,8 +1690,22 @@ class FleetGraphWizard {
         // Try to select path
         const path = this.findPathAt(point);
         if (path) {
-            this.selectedPath = path;
-            this.showPathModal();
+            if (shiftKey) {
+                // Multi-select paths
+                const index = this.selectedPaths.findIndex(p => p.id === path.id);
+                if (index >= 0) {
+                    this.selectedPaths.splice(index, 1);
+                } else {
+                    this.selectedPaths.push(path);
+                }
+                this.updateStatus(`Selected ${this.selectedPaths.length} path(s)`);
+                this.render();
+            } else {
+                // Single select - open modal
+                this.selectedPath = path;
+                this.selectedPaths = [path];
+                this.showPathModal();
+            }
         }
     }
 
@@ -1351,6 +1723,27 @@ class FleetGraphWizard {
         if (path) {
             this.paths = this.paths.filter(p => p.id !== path.id);
             this.updateStatus(`Deleted path: ${path.name}`);
+            this.render();
+        }
+    }
+
+    handleMeasurement(point) {
+        if (!this.measureStart) {
+            this.measureStart = point;
+            this.updateStatus('Click second point to measure distance');
+        } else {
+            // Calculate and show measurement
+            const distance = this.calculatePathDistance(this.measureStart, point);
+            let distanceText = `Distance: ${distance.pixels.toFixed(1)}px`;
+            if (distance.meters !== null) {
+                distanceText = `Distance: ${distance.meters.toFixed(3)}m (${distance.pixels.toFixed(1)}px)`;
+            }
+            this.showToast(distanceText, 5000);
+            this.updateStatus(distanceText);
+
+            // Reset measurement
+            this.measureStart = null;
+            this.measureEnd = null;
             this.render();
         }
     }
@@ -1420,6 +1813,8 @@ class FleetGraphWizard {
     updateNodeProperties() {
         if (!this.selectedNode) return;
 
+        this.saveState(); // Save state before modification
+
         this.selectedNode.name = document.getElementById('nodeName').value;
         this.selectedNode.type = document.getElementById('nodeType').value;
         this.selectedNode.noWaiting = document.getElementById('noWaiting').checked;
@@ -1442,6 +1837,8 @@ class FleetGraphWizard {
 
     updatePathProperties() {
         if (!this.selectedPath) return;
+
+        this.saveState(); // Save state before modification
 
         this.selectedPath.name = document.getElementById('pathName').value;
         this.selectedPath.speedLimit = parseFloat(document.getElementById('pathSpeed').value);
@@ -1515,14 +1912,14 @@ class FleetGraphWizard {
         ctx.translate(this.offset.x, this.offset.y);
         ctx.scale(this.scale, this.scale);
 
-        // Draw grid if enabled
-        if (this.showGrid) {
-            this.drawGrid(ctx);
-        }
-
         // Draw map
         if (this.mapImage) {
             ctx.drawImage(this.mapImage, 0, 0);
+        }
+
+        // Draw grid on top of map if enabled
+        if (this.showGrid) {
+            this.drawGrid(ctx);
         }
 
         // Draw paths
@@ -1538,10 +1935,79 @@ class FleetGraphWizard {
             ctx.lineTo(this.tempPathEnd.x, this.tempPathEnd.y);
             ctx.stroke();
             ctx.setLineDash([]);
+
+            // Draw distance label for temp path
+            const distance = this.calculatePathDistance(this.pathStart, this.tempPathEnd);
+            const midX = (this.pathStart.x + this.tempPathEnd.x) / 2;
+            const midY = (this.pathStart.y + this.tempPathEnd.y) / 2;
+
+            let distanceText = `${distance.pixels.toFixed(1)}px`;
+            if (distance.meters !== null) {
+                distanceText = `${distance.meters.toFixed(2)}m`;
+            }
+
+            ctx.font = 'bold 14px Arial';
+            const textWidth = ctx.measureText(distanceText).width;
+            const padding = 4;
+
+            // Draw background
+            ctx.fillStyle = 'rgba(255, 255, 0, 0.9)';
+            ctx.fillRect(midX - textWidth / 2 - padding, midY - 10 - padding, textWidth + padding * 2, 20);
+
+            // Draw text
+            ctx.fillStyle = '#000';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(distanceText, midX, midY);
         }
 
         // Draw nodes
         this.nodes.forEach(node => this.drawNode(node));
+
+        // Draw measurement line
+        if (this.measureStart && this.measureEnd) {
+            ctx.strokeStyle = 'rgba(255, 0, 255, 0.8)';
+            ctx.lineWidth = 3;
+            ctx.setLineDash([10, 5]);
+            ctx.beginPath();
+            ctx.moveTo(this.measureStart.x, this.measureStart.y);
+            ctx.lineTo(this.measureEnd.x, this.measureEnd.y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Draw measurement markers
+            ctx.fillStyle = 'rgba(255, 0, 255, 0.9)';
+            ctx.beginPath();
+            ctx.arc(this.measureStart.x, this.measureStart.y, 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(this.measureEnd.x, this.measureEnd.y, 5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw distance label
+            const distance = this.calculatePathDistance(this.measureStart, this.measureEnd);
+            const midX = (this.measureStart.x + this.measureEnd.x) / 2;
+            const midY = (this.measureStart.y + this.measureEnd.y) / 2;
+
+            let distanceText = `${distance.pixels.toFixed(1)}px`;
+            if (distance.meters !== null) {
+                distanceText = `${distance.meters.toFixed(3)}m`;
+            }
+
+            ctx.font = 'bold 14px Arial';
+            const textWidth = ctx.measureText(distanceText).width;
+            const padding = 4;
+
+            // Draw background
+            ctx.fillStyle = 'rgba(255, 0, 255, 0.9)';
+            ctx.fillRect(midX - textWidth / 2 - padding, midY - 10 - padding, textWidth + padding * 2, 20);
+
+            // Draw text
+            ctx.fillStyle = '#fff';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(distanceText, midX, midY);
+        }
 
         // Draw selection box
         if (this.isSelecting && this.selectionBox) {
@@ -1567,6 +2033,11 @@ class FleetGraphWizard {
         // Draw tooltip
         if (this.hoveredNode && this.tooltipVisible) {
             this.drawTooltip(ctx);
+        }
+
+        // Draw path tooltip
+        if (this.hoveredPath && this.tooltipVisible) {
+            this.drawPathTooltip(ctx);
         }
 
         // Draw minimap
@@ -1633,6 +2104,60 @@ class FleetGraphWizard {
 
         // Draw border
         ctx.strokeStyle = '#007acc';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(tooltipX, tooltipY, boxWidth, boxHeight);
+
+        // Draw text
+        ctx.fillStyle = '#e0e0e0';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        lines.forEach((line, i) => {
+            ctx.fillText(line, tooltipX + padding, tooltipY + padding + i * lineHeight);
+        });
+    }
+
+    drawPathTooltip(ctx) {
+        if (!this.hoveredPath) return;
+
+        const path = this.hoveredPath;
+        const fromNode = this.nodes.find(n => n.id === path.from);
+        const toNode = this.nodes.find(n => n.id === path.to);
+
+        if (!fromNode || !toNode) return;
+
+        const distance = this.calculatePathDistance(fromNode, toNode);
+        const midX = (fromNode.x + toNode.x) / 2;
+        const midY = (fromNode.y + toNode.y) / 2;
+
+        const lines = [
+            `Path: ${path.name}`,
+            `From: ${fromNode.name}`,
+            `To: ${toNode.name}`,
+            distance.meters !== null ? `Distance: ${distance.meters.toFixed(2)}m` : `Distance: ${distance.pixels.toFixed(1)}px`,
+            `Speed: ${path.speedLimit}m/s`,
+            `Width: ${path.width}m`,
+            `Direction: ${path.bidirectional ? 'Bidirectional' : 'One-way'}`
+        ];
+
+        const padding = 8;
+        const lineHeight = 16;
+        const fontSize = 12;
+        ctx.font = `${fontSize}px Arial`;
+
+        const maxWidth = Math.max(...lines.map(l => ctx.measureText(l).width));
+        const boxWidth = maxWidth + padding * 2;
+        const boxHeight = lines.length * lineHeight + padding * 2;
+
+        // Position tooltip near path midpoint
+        const tooltipX = (midX * this.scale) + this.offset.x + 20;
+        const tooltipY = (midY * this.scale) + this.offset.y + 20;
+
+        // Draw background
+        ctx.fillStyle = 'rgba(45, 45, 45, 0.95)';
+        ctx.fillRect(tooltipX, tooltipY, boxWidth, boxHeight);
+
+        // Draw border
+        ctx.strokeStyle = '#00ff00';
         ctx.lineWidth = 1;
         ctx.strokeRect(tooltipX, tooltipY, boxWidth, boxHeight);
 
@@ -1737,7 +2262,7 @@ class FleetGraphWizard {
 
     drawNode(node) {
         const ctx = this.ctx;
-        const radius = 10;
+        const radius = 6;
         const isSelected = this.selectedNode?.id === node.id || this.selectedNodes.some(n => n.id === node.id);
         const isHovered = this.hoveredNode?.id === node.id;
 
@@ -1839,7 +2364,7 @@ class FleetGraphWizard {
 
         const ctx = this.ctx;
         const isHovered = this.hoveredPath?.id === path.id;
-        const isSelected = this.selectedPath?.id === path.id;
+        const isSelected = this.selectedPath?.id === path.id || this.selectedPaths.some(p => p.id === path.id);
 
         // Draw path line (if enabled)
         if (this.showPathLines) {
@@ -1925,6 +2450,397 @@ class FleetGraphWizard {
         );
         ctx.closePath();
         ctx.fill();
+    }
+
+    // === ALIGNMENT TOOLS ===
+    alignNodesHorizontal() {
+        if (this.selectedNodes.length < 2) {
+            this.showToast('Select at least 2 nodes to align');
+            return;
+        }
+
+        this.saveState();
+        const avgY = this.selectedNodes.reduce((sum, node) => sum + node.y, 0) / this.selectedNodes.length;
+
+        this.selectedNodes.forEach(node => {
+            node.y = avgY;
+        });
+
+        this.showToast(`Aligned ${this.selectedNodes.length} nodes horizontally`);
+        this.render();
+    }
+
+    alignNodesVertical() {
+        if (this.selectedNodes.length < 2) {
+            this.showToast('Select at least 2 nodes to align');
+            return;
+        }
+
+        this.saveState();
+        const avgX = this.selectedNodes.reduce((sum, node) => sum + node.x, 0) / this.selectedNodes.length;
+
+        this.selectedNodes.forEach(node => {
+            node.x = avgX;
+        });
+
+        this.showToast(`Aligned ${this.selectedNodes.length} nodes vertically`);
+        this.render();
+    }
+
+    alignNodesToGrid() {
+        if (this.selectedNodes.length === 0) {
+            this.showToast('Select nodes to align to grid');
+            return;
+        }
+
+        this.saveState();
+
+        this.selectedNodes.forEach(node => {
+            const snapped = this.snapPointToGrid({x: node.x, y: node.y});
+            node.x = snapped.x;
+            node.y = snapped.y;
+        });
+
+        this.showToast(`Aligned ${this.selectedNodes.length} nodes to grid`);
+        this.render();
+    }
+
+    // === BULK EDIT ===
+    showBulkEditModal() {
+        if (this.selectedNodes.length === 0) {
+            this.showToast('Select nodes to bulk edit');
+            return;
+        }
+
+        const modal = document.getElementById('bulkEditModal');
+        document.getElementById('bulkEditCount').textContent = this.selectedNodes.length;
+
+        // Reset form
+        document.getElementById('bulkNodeType').value = '';
+        document.getElementById('bulkNoWaiting').checked = false;
+        document.getElementById('bulkIsParkingSpot').checked = false;
+        document.getElementById('bulkMaxRobots').value = '';
+
+        modal.style.display = 'block';
+    }
+
+    applyBulkEdit() {
+        this.saveState();
+
+        const nodeType = document.getElementById('bulkNodeType').value;
+        const noWaiting = document.getElementById('bulkNoWaiting').checked;
+        const isParkingSpot = document.getElementById('bulkIsParkingSpot').checked;
+        const maxRobots = document.getElementById('bulkMaxRobots').value;
+
+        this.selectedNodes.forEach(node => {
+            if (nodeType) {
+                node.type = nodeType;
+            }
+            if (noWaiting) {
+                node.noWaiting = true;
+            }
+            if (isParkingSpot) {
+                node.isParkingSpot = true;
+            }
+            if (maxRobots) {
+                node.maxRobots = parseInt(maxRobots);
+            }
+        });
+
+        this.showToast(`Updated ${this.selectedNodes.length} nodes`);
+    }
+
+    // === ROS2 EXPORT ===
+    exportRos2() {
+        if (!this.mapYaml) {
+            this.showToast('Load a map first to export ROS2 format');
+            return;
+        }
+
+        const ros2Data = {
+            map: {
+                image: this.mapYaml.image,
+                resolution: this.mapYaml.resolution,
+                origin: this.mapYaml.origin,
+                negate: this.mapYaml.negate || 0,
+                occupied_thresh: this.mapYaml.occupied_thresh || 0.65,
+                free_thresh: this.mapYaml.free_thresh || 0.196
+            },
+            waypoints: this.nodes.map(node => {
+                const worldCoords = this.getWorldCoordinates(node.x, node.y);
+                return {
+                    id: node.name,
+                    position: {
+                        x: worldCoords.x,
+                        y: worldCoords.y,
+                        z: 0.0
+                    },
+                    orientation: {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                        w: 1.0
+                    },
+                    type: node.type,
+                    properties: {
+                        no_waiting: node.noWaiting,
+                        is_parking_spot: node.isParkingSpot,
+                        max_robots: node.maxRobots
+                    }
+                };
+            }),
+            edges: this.paths.map(path => {
+                const fromNode = this.nodes.find(n => n.id === path.from);
+                const toNode = this.nodes.find(n => n.id === path.to);
+                const distance = this.calculatePathDistance(fromNode, toNode);
+
+                return {
+                    from: fromNode.name,
+                    to: toNode.name,
+                    bidirectional: path.bidirectional,
+                    speed_limit: path.speedLimit,
+                    width: path.width,
+                    distance: distance.meters || distance.pixels
+                };
+            })
+        };
+
+        const blob = new Blob([JSON.stringify(ros2Data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'fleet_graph_ros2.json';
+        a.click();
+        URL.revokeObjectURL(url);
+
+        this.showToast('Exported to ROS2 format');
+    }
+
+    // === GRAPH VALIDATION ===
+    validateGraph() {
+        const issues = [];
+
+        // Check for disconnected nodes
+        const connectedNodes = new Set();
+        this.paths.forEach(path => {
+            connectedNodes.add(path.from);
+            connectedNodes.add(path.to);
+        });
+
+        const disconnectedNodes = this.nodes.filter(node => !connectedNodes.has(node.id));
+        if (disconnectedNodes.length > 0) {
+            issues.push({
+                type: 'warning',
+                title: 'Disconnected Nodes',
+                description: `${disconnectedNodes.length} node(s) have no paths: ${disconnectedNodes.map(n => n.name).join(', ')}`
+            });
+        }
+
+        // Check for overlapping nodes
+        const overlaps = [];
+        for (let i = 0; i < this.nodes.length; i++) {
+            for (let j = i + 1; j < this.nodes.length; j++) {
+                const dx = this.nodes[i].x - this.nodes[j].x;
+                const dy = this.nodes[i].y - this.nodes[j].y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance < 10) { // Less than 10 pixels apart
+                    overlaps.push(`${this.nodes[i].name} and ${this.nodes[j].name}`);
+                }
+            }
+        }
+
+        if (overlaps.length > 0) {
+            issues.push({
+                type: 'error',
+                title: 'Overlapping Nodes',
+                description: `${overlaps.length} pair(s) of nodes are too close: ${overlaps.join(', ')}`
+            });
+        }
+
+        // Check for duplicate paths
+        const pathKeys = new Set();
+        const duplicates = [];
+
+        this.paths.forEach(path => {
+            const key1 = `${path.from}-${path.to}`;
+            const key2 = `${path.to}-${path.from}`;
+
+            if (pathKeys.has(key1) || (path.bidirectional && pathKeys.has(key2))) {
+                duplicates.push(`${path.name}`);
+            }
+
+            pathKeys.add(key1);
+            if (path.bidirectional) {
+                pathKeys.add(key2);
+            }
+        });
+
+        if (duplicates.length > 0) {
+            issues.push({
+                type: 'warning',
+                title: 'Duplicate Paths',
+                description: `${duplicates.length} duplicate path(s) found: ${duplicates.join(', ')}`
+            });
+        }
+
+        // Check for nodes with duplicate names
+        const nameCount = {};
+        this.nodes.forEach(node => {
+            nameCount[node.name] = (nameCount[node.name] || 0) + 1;
+        });
+
+        const duplicateNames = Object.keys(nameCount).filter(name => nameCount[name] > 1);
+        if (duplicateNames.length > 0) {
+            issues.push({
+                type: 'error',
+                title: 'Duplicate Node Names',
+                description: `${duplicateNames.length} duplicate name(s): ${duplicateNames.join(', ')}`
+            });
+        }
+
+        // Display results
+        const modal = document.getElementById('validationModal');
+        const resultsDiv = document.getElementById('validationResults');
+
+        if (issues.length === 0) {
+            resultsDiv.innerHTML = '<div style="color: #28a745; padding: 20px; text-align: center;"><h3>✓ Graph is valid!</h3><p>No issues found.</p></div>';
+        } else {
+            resultsDiv.innerHTML = issues.map(issue => {
+                const color = issue.type === 'error' ? '#dc3545' : '#ffc107';
+                return `
+                    <div style="margin-bottom: 15px; padding: 10px; border-left: 4px solid ${color}; background-color: rgba(255,255,255,0.05);">
+                        <h4 style="color: ${color}; margin-bottom: 5px;">${issue.type === 'error' ? '✗' : '⚠'} ${issue.title}</h4>
+                        <p style="color: #e0e0e0; font-size: 13px;">${issue.description}</p>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        modal.style.display = 'block';
+    }
+
+    // === RECENT FILES ===
+    loadRecentFiles() {
+        try {
+            const stored = localStorage.getItem('fleetGraphWizard_recentFiles');
+            return stored ? JSON.parse(stored) : [];
+        } catch (error) {
+            console.error('Error loading recent files:', error);
+            return [];
+        }
+    }
+
+    saveToRecentFiles(filename, mapYaml) {
+        try {
+            const entry = {
+                filename: filename,
+                timestamp: new Date().toISOString(),
+                mapYaml: mapYaml
+            };
+
+            // Remove if already exists
+            this.recentFiles = this.recentFiles.filter(f => f.filename !== filename);
+
+            // Add to front
+            this.recentFiles.unshift(entry);
+
+            // Keep only last 10
+            this.recentFiles = this.recentFiles.slice(0, 10);
+
+            // Save to localStorage
+            localStorage.setItem('fleetGraphWizard_recentFiles', JSON.stringify(this.recentFiles));
+        } catch (error) {
+            console.error('Error saving recent files:', error);
+        }
+    }
+
+    clearRecentFiles() {
+        this.recentFiles = [];
+        localStorage.removeItem('fleetGraphWizard_recentFiles');
+        this.showToast('Recent files cleared');
+        this.showRecentFilesDropdown(); // Refresh the dropdown
+    }
+
+    showRecentFilesDropdown() {
+        const dropdown = document.getElementById('recentFilesDropdown');
+        const button = document.getElementById('recentFilesBtn');
+        const rect = button.getBoundingClientRect();
+
+        dropdown.style.top = (rect.bottom + 5) + 'px';
+        dropdown.style.left = rect.left + 'px';
+
+        if (this.recentFiles.length === 0) {
+            dropdown.innerHTML = '<div class="dropdown-empty">No recent files</div>';
+        } else {
+            dropdown.innerHTML = this.recentFiles.map(file => {
+                const date = new Date(file.timestamp);
+                const dateStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+
+                return `
+                    <div class="dropdown-item" data-filename="${file.filename}">
+                        <div class="dropdown-item-title">${file.filename}</div>
+                        <div class="dropdown-item-subtitle">${dateStr}</div>
+                    </div>
+                `;
+            }).join('') + `
+                <div class="dropdown-item" onclick="app.clearRecentFiles()" style="border-top: 2px solid #555; color: #ff6b6b;">
+                    <div class="dropdown-item-title">Clear Recent Files</div>
+                </div>
+            `;
+
+            // Add click handlers to items
+            setTimeout(() => {
+                dropdown.querySelectorAll('.dropdown-item[data-filename]').forEach(item => {
+                    item.addEventListener('click', () => {
+                        const filename = item.getAttribute('data-filename');
+                        this.showToast(`Recent file info: ${filename}. Note: You still need to load the files manually.`, 4000);
+                        dropdown.style.display = 'none';
+                    });
+                });
+            }, 0);
+        }
+
+        dropdown.style.display = 'block';
+    }
+
+    // === SEARCH ===
+    handleSearch(query) {
+        if (!query || query.length < 2) {
+            this.searchResults = [];
+            this.render();
+            return;
+        }
+
+        const lowerQuery = query.toLowerCase();
+
+        // Search nodes
+        const matchingNodes = this.nodes.filter(node =>
+            node.name.toLowerCase().includes(lowerQuery)
+        );
+
+        // Search paths
+        const matchingPaths = this.paths.filter(path =>
+            path.name.toLowerCase().includes(lowerQuery)
+        );
+
+        this.searchResults = {
+            nodes: matchingNodes,
+            paths: matchingPaths
+        };
+
+        // Highlight matching nodes
+        if (matchingNodes.length > 0) {
+            this.selectedNodes = matchingNodes;
+            this.updateStatus(`Found ${matchingNodes.length} node(s) and ${matchingPaths.length} path(s)`);
+        } else if (matchingPaths.length > 0) {
+            this.updateStatus(`Found ${matchingPaths.length} path(s)`);
+        } else {
+            this.selectedNodes = [];
+            this.updateStatus('No results found');
+        }
+
+        this.render();
     }
 
     updateStatus(message) {
