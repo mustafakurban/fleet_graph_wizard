@@ -1,0 +1,15 @@
+NODES
+id,name,x,y,type,maxRobots,parkingSpot,noWaiting
+node1,Warehouse Entrance,5.0,3.0,normal,2,false,false
+node2,Charging Station A,10.5,8.0,charging,1,true,true
+node3,Pickup Zone 1,15.0,3.5,pickup,3,false,false
+node4,Dropoff Zone 1,15.0,12.0,dropoff,2,false,false
+node5,Junction A,10.0,15.0,normal,1,false,false
+
+PATHS
+id,name,from,to,bidirectional,speedLimit,width
+path1,Main Corridor,node1,node2,true,1.5,0.8
+path2,To Pickup,node1,node3,true,2.0,1.0
+path3,Pickup to Dropoff,node3,node4,false,1.8,0.9
+path4,Charging Access,node2,node5,true,1.0,0.7
+path5,Dropoff Return,node4,node5,true,1.5,0.8

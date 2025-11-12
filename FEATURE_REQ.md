@@ -1,16 +1,71 @@
 # Fleet Graph Wizard - Feature Improvements List
 
+## Development Status Summary
+
+### Recently Implemented Features ✅
+
+**Import/Export System:**
+- ✅ **Plugin-based parser system** for custom import formats
+- ✅ Parser dropdown selector in UI
+- ✅ BaseParser abstract class with validation
+- ✅ JSONParser (native format)
+- ✅ CSVParser (example with NODES/PATHS sections)
+- ✅ Standardized graph format output from all parsers
+- ✅ Dynamic file type filtering based on selected parser
+- ✅ Comprehensive parser development documentation
+
+**UI/UX Improvements:**
+- ✅ ESC key to close modals, cancel operations, and clear selections (including paths)
+- ✅ Grid system aligned with map frame/world coordinates
+- ✅ Snap to grid functionality (keyboard shortcut: S)
+- ✅ Zoom level indicator in status bar
+- ✅ Tool tooltips with keyboard shortcuts
+- ✅ Keyboard shortcuts help modal (F1 or ?)
+- ✅ Path distance display during creation and hover
+
+**Selection & Editing:**
+- ✅ Single click to select nodes/paths (double-click to edit in properties panel)
+- ✅ Multi-selection with Shift+click
+- ✅ Node alignment tools (horizontal, vertical, grid)
+- ✅ Bulk edit properties for multiple nodes
+- ✅ Improved path click detection (20px tolerance)
+- ✅ Undo/Redo for all operations
+
+**Validation & Tools:**
+- ✅ Graph validation (disconnected nodes, overlaps, duplicates)
+- ✅ Measurement tool (pixels and meters)
+- ✅ Node/Path search with real-time filtering
+- ✅ Recent files list (localStorage)
+
+**Visual Enhancements:**
+- ✅ Animated direction arrows on paths
+- ✅ Speed-based arrow animation (faster arrows for higher speed limits)
+- ✅ Custom node type icons (charging ⚡, pickup ↑, dropoff ↓, parking P, no-waiting ⊘)
+- ✅ Icons positioned around nodes with intelligent overlap prevention
+- ✅ Icons drawn above names for better visibility
+
+**Removed Features:**
+- ❌ ROS2 export (removed - use standard JSON with world coordinates instead)
+
+### Legend
+- ✅ = Fully implemented
+- ⚠️ = Partially implemented
+- ❌ = Removed or not planned
+
+---
+
 ## High Priority & Easy to Implement (Quick Wins)
 
-### 1. ESC to Close Modals & Cancel Operations
-- Press ESC to close property modals
-- Press ESC to cancel path drawing
-- Press ESC to clear current selection
+### ✅ 1. ESC to Close Modals & Cancel Operations
+- ✅ Press ESC to close property modals
+- ✅ Press ESC to cancel path drawing
+- ✅ Press ESC to clear current selection (including paths)
 
-### 2. Node Snapping to Grid
-- Nodes snap to grid intersections when placing/moving
-- Only active when grid is enabled
-- Optional snap-to-grid toggle
+### ✅ 2. Node Snapping to Grid
+- ✅ Nodes snap to grid intersections when placing/moving
+- ✅ Only active when grid is enabled
+- ✅ Optional snap-to-grid toggle (keyboard shortcut: S)
+- ✅ Grid aligned with map frame/world coordinates
 
 ### 3. Save State Before Map Load
 - Warn user about unsaved changes before loading a new map
@@ -22,25 +77,25 @@
 - Clear instructions on how to fix issues
 - Toast notifications for important events
 
-### 5. Zoom Level Indicator
-- Show current zoom percentage in status bar
-- Display in real-time as user zooms
-- Format: "Zoom: 100%"
+### ✅ 5. Zoom Level Indicator
+- ✅ Show current zoom percentage in status bar
+- ✅ Display in real-time as user zooms
+- ✅ Format: "Zoom: 100%"
 
-### 6. Path Distance Display
-- Show path length in meters when creating paths
-- Display distance on hover over existing paths
-- Use map resolution from YAML for accurate calculations
+### ✅ 6. Path Distance Display
+- ✅ Show path length in meters when creating paths
+- ✅ Display distance on hover over existing paths
+- ✅ Use map resolution from YAML for accurate calculations
 
-### 7. Tool Tooltips
-- Add tooltips to toolbar buttons
-- Explain what each tool does
-- Show keyboard shortcuts in tooltips
+### ✅ 7. Tool Tooltips
+- ✅ Add tooltips to toolbar buttons
+- ✅ Explain what each tool does
+- ✅ Show keyboard shortcuts in tooltips
 
-### 8. Keyboard Shortcuts Help
-- Add a help panel showing all keyboard shortcuts
-- Open with '?' or F1 key
-- Modal overlay with complete shortcut list
+### ✅ 8. Keyboard Shortcuts Help
+- ✅ Add a help panel showing all keyboard shortcuts
+- ✅ Open with '?' or F1 key
+- ✅ Modal overlay with complete shortcut list
 
 ### 9. Auto-Save to LocalStorage
 - Periodically save work automatically
@@ -56,61 +111,60 @@
 
 ## High Value Features (Medium Effort)
 
-### 11. Node Alignment Tools
-- Align multiple selected nodes horizontally
-- Align multiple selected nodes vertically
-- Align to grid intersections
-- Distribute nodes evenly
+### ✅ 11. Node Alignment Tools
+- ✅ Align multiple selected nodes horizontally
+- ✅ Align multiple selected nodes vertically
+- ✅ Align to grid intersections
+- ⚠️ Distribute nodes evenly (not implemented)
 
-### 12. Bulk Edit Properties
-- Edit properties for multiple nodes at once
-- Change type, max robots, parking status for selection
-- Apply changes to all selected nodes
+### ✅ 12. Bulk Edit Properties
+- ✅ Edit properties for multiple nodes at once
+- ✅ Change type, max robots, parking status for selection
+- ✅ Apply changes to all selected nodes
 
-### 13. Export to ROS2 Format
-- Export graph in ROS2 navigation format
-- Support for nav2 graph format
-- Include all node and path properties
+### ❌ 13. Export to ROS2 Format (REMOVED)
+- ❌ ROS2 export feature was removed
+- ✅ Standard JSON export available with world coordinates
 
-### 14. Graph Validation
-- Check for disconnected nodes
-- Detect overlapping nodes
-- Find duplicate paths between same nodes
-- Validate path widths and speeds
+### ✅ 14. Graph Validation
+- ✅ Check for disconnected nodes
+- ✅ Detect overlapping nodes
+- ✅ Find duplicate paths between same nodes
+- ✅ Validate duplicate node/path names
 
-### 15. Measurement Tool
-- Measure distance between any two points
-- Click two points to show distance
-- Display in both pixels and meters
+### ✅ 15. Measurement Tool
+- ✅ Measure distance between any two points
+- ✅ Click two points to show distance
+- ✅ Display in both pixels and meters
 
-### 16. Path Editing
-- Edit existing paths
-- Add intermediate waypoints
-- Change path route
-- Drag path segments to reshape
+### ✅ 16. Path Editing
+- ✅ Edit existing paths (double-click to edit)
+- ⚠️ Add intermediate waypoints (not implemented)
+- ⚠️ Change path route (not implemented)
+- ⚠️ Drag path segments to reshape (not implemented)
 
-### 17. Recent Files List
-- Quick access to recently loaded maps
-- Stored in localStorage
-- Show last 5-10 files
-- Display in file menu
+### ✅ 17. Recent Files List
+- ✅ Quick access to recently loaded maps
+- ✅ Stored in localStorage
+- ✅ Show last 5-10 files
+- ✅ Display in file menu dropdown
 
-### 18. Undo/Redo for Property Edits
-- Ensure all operations are undoable
-- Include property changes in history
-- Include node/path deletion in history
+### ✅ 18. Undo/Redo for Property Edits
+- ✅ Ensure all operations are undoable
+- ✅ Include property changes in history
+- ✅ Include node/path deletion in history
 
-### 19. Multi-Path Selection
-- Select multiple paths at once
-- Shift+click to add paths to selection
-- Delete multiple paths at once
-- Bulk edit path properties
+### ✅ 19. Multi-Path Selection
+- ✅ Select multiple paths at once
+- ✅ Shift+click to add paths to selection
+- ✅ Delete multiple paths at once
+- ✅ Improved path click detection (20px tolerance)
 
-### 20. Node/Path Search
-- Search bar to find nodes by name
-- Search paths by name
-- Highlight search results
-- Jump to found items
+### ✅ 20. Node/Path Search
+- ✅ Search bar to find nodes by name
+- ✅ Search paths by name
+- ✅ Highlight search results
+- ✅ Auto-focus on found items
 
 ---
 
@@ -317,15 +371,23 @@
 - Node usage statistics
 - Color-coded visualization
 
-### 55. Path Flow Animation
-- Animate arrows along paths
-- Show direction of travel
-- Visual flow indicators
+### ✅ 55. Path Flow Animation
+- ✅ Animate arrows along paths
+- ✅ Show direction of travel
+- ✅ Visual flow indicators
+- ✅ Speed-based animation (arrow speed matches path speed limit)
+- ✅ Multiple arrows on longer paths
 
-### 56. Custom Node Icons
-- Different icons for different types
-- Upload custom icons
-- Icon library
+### ✅ 56. Custom Node Icons
+- ✅ Different icons for different types
+- ✅ Charging station (⚡ lightning bolt)
+- ✅ Pickup point (↑ up arrow)
+- ✅ Dropoff point (↓ down arrow)
+- ✅ Parking spot (P letter)
+- ✅ No waiting (⊘ diagonal line)
+- ✅ Icons positioned around nodes
+- ✅ Intelligent positioning to avoid overlap
+- ⚠️ Upload custom icons (not implemented)
 
 ### 57. Path Style Customization
 - Different line styles

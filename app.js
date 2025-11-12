@@ -90,12 +90,17 @@ class FleetGraphWizard {
         // Quick shortcuts visibility
         this.quickShortcutsVisible = false;
 
+        // Parser system
+        this.availableParsers = [];
+        this.currentParser = null;
+
         this.init();
     }
 
     init() {
         this.setupCanvas();
         this.setupEventListeners();
+        this.initializeParsers();
         this.disableTools();
         this.startAnimationLoop();
         this.render();
@@ -223,11 +228,11 @@ class FleetGraphWizard {
         });
 
         document.getElementById('importJsonBtn').addEventListener('click', () => {
-            document.getElementById('jsonInput').click();
+            document.getElementById('graphInput').click();
         });
 
-        document.getElementById('jsonInput').addEventListener('change', (e) => {
-            this.importJson(e.target.files[0]);
+        document.getElementById('graphInput').addEventListener('change', (e) => {
+            this.importGraph(e.target.files[0]);
         });
 
         document.getElementById('exportJsonBtn').addEventListener('click', () => {
@@ -1904,35 +1909,123 @@ class FleetGraphWizard {
         this.updateStatus('Graph exported successfully');
     }
 
-    async importJson(file) {
+    initializeParsers() {
+        // Load all available parsers
+        if (typeof getAllParsers === 'function') {
+            this.availableParsers = getAllParsers();
+            this.currentParser = getDefaultParser();
+            this.updateParserUI();
+        } else {
+            console.warn('Parser system not loaded. Make sure parser scripts are included.');
+        }
+    }
+
+    updateParserUI() {
+        const parserSelect = document.getElementById('parserSelect');
+        if (!parserSelect) return;
+
+        // Clear existing options
+        parserSelect.innerHTML = '';
+
+        // Add parser options
+        this.availableParsers.forEach(parser => {
+            const option = document.createElement('option');
+            option.value = parser.id;
+            option.textContent = parser.name;
+            option.title = parser.description;
+            parserSelect.appendChild(option);
+        });
+
+        // Set current parser
+        if (this.currentParser) {
+            parserSelect.value = this.currentParser.id;
+        }
+
+        // Update file input accept attribute
+        this.updateFileInputAccept();
+    }
+
+    updateFileInputAccept() {
+        const fileInput = document.getElementById('graphInput');
+        if (!fileInput || !this.currentParser) return;
+
+        fileInput.accept = this.currentParser.getAcceptString();
+    }
+
+    onParserChange(parserId) {
+        const parser = getParserById(parserId);
+        if (parser) {
+            this.currentParser = parser;
+            this.updateFileInputAccept();
+            this.updateStatus(`Parser changed to: ${parser.name}`);
+        }
+    }
+
+    async importGraph(file) {
         if (!file) return;
 
+        if (!this.currentParser) {
+            alert('No parser selected. Please select an import format.');
+            return;
+        }
+
         try {
+            this.updateStatus(`Importing graph using ${this.currentParser.name}...`);
+
+            // Read file content
             const text = await file.text();
-            const data = JSON.parse(text);
 
-            this.nodes = data.nodes || [];
-            this.paths = data.paths || [];
+            // Parse using selected parser
+            const data = await this.currentParser.parse(text, file.name);
 
-            if (data.metadata?.mapYaml) {
-                this.mapYaml = data.metadata.mapYaml;
-                this.updateMapInfo();
-            }
-
-            // Update node counter
-            this.nodeCounter = this.nodes.length + 1;
-
-            // Enable tools if we have nodes/paths to work with
-            if (this.nodes.length > 0 || this.paths.length > 0) {
-                this.enableTools();
-            }
+            // Load the standardized graph data
+            this.loadGraphData(data);
 
             this.updateStatus(`Imported ${this.nodes.length} nodes and ${this.paths.length} paths`);
             this.render();
+
         } catch (error) {
-            console.error('Error importing JSON:', error);
-            alert('Error importing JSON: ' + error.message);
+            console.error('Error importing graph:', error);
+            alert('Error importing graph: ' + error.message);
+            this.updateStatus('Import failed');
         }
+    }
+
+    loadGraphData(data) {
+        // Load nodes
+        this.nodes = data.nodes || [];
+
+        // Load paths
+        this.paths = data.paths || [];
+
+        // Load metadata
+        if (data.metadata?.mapYaml) {
+            this.mapYaml = data.metadata.mapYaml;
+            this.updateMapInfo();
+        }
+
+        // Update node counter to avoid ID conflicts
+        const maxNodeNumber = this.nodes.reduce((max, node) => {
+            const match = node.id.match(/\d+$/);
+            if (match) {
+                return Math.max(max, parseInt(match[0]));
+            }
+            return max;
+        }, 0);
+        this.nodeCounter = maxNodeNumber + 1;
+
+        // Enable tools if we have nodes/paths to work with
+        if (this.nodes.length > 0 || this.paths.length > 0) {
+            this.enableTools();
+        }
+
+        // Save state for undo
+        this.saveState();
+    }
+
+    async importJson(file) {
+        // Legacy method - redirect to new import system
+        await this.importGraph(file);
     }
 
     render() {

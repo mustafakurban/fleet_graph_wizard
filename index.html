@@ -21,8 +21,12 @@
                 <button id="recentFilesBtn" class="btn" title="View recent maps">Recent ▼</button>
                 <div id="recentFilesDropdown" class="dropdown-menu" style="display: none;"></div>
 
-                <button id="importJsonBtn" class="btn btn-secondary" title="Import previously saved graph JSON">Import</button>
-                <input type="file" id="jsonInput" accept=".json" style="display: none;">
+                <select id="parserSelect" class="parser-select" title="Select import format">
+                    <option value="json">JSON Format</option>
+                </select>
+
+                <button id="importJsonBtn" class="btn btn-secondary" title="Import graph using selected format">Import</button>
+                <input type="file" id="graphInput" accept=".json" style="display: none;">
 
                 <button id="exportJsonBtn" class="btn btn-success" title="Export graph to JSON file">Export</button>
 
@@ -327,6 +331,30 @@
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+
+    <!-- Manager Classes -->
+    <script src="src/MapManager.js"></script>
+    <script src="src/GraphManager.js"></script>
+    <script src="src/ViewManager.js"></script>
+
+    <!-- Parser System -->
+    <script src="parsers/BaseParser.js"></script>
+    <script src="parsers/JSONParser.js"></script>
+    <script src="parsers/CSVParser.js"></script>
+    <script src="parsers/SQLiteParser.js"></script>
+    <!-- Add your custom parsers here -->
+    <script src="parsers/index.js"></script>
+
     <script src="app.js"></script>
+    <script>
+        // Wait for app to initialize, then setup parser selector
+        document.addEventListener('DOMContentLoaded', () => {
+            // Parser selector change event
+            document.getElementById('parserSelect').addEventListener('change', (e) => {
+                window.app.onParserChange(e.target.value);
+            });
+        });
+    </script>
 </body>
 </html>

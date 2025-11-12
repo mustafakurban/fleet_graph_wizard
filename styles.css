@@ -94,6 +94,34 @@ header p {
     color: #666;
 }
 
+.parser-select {
+    padding: 6px 12px;
+    border: 1px solid #555;
+    border-radius: 4px;
+    background-color: #1e1e1e;
+    color: #e0e0e0;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    min-width: 120px;
+}
+
+.parser-select:hover {
+    border-color: #007acc;
+    background-color: #2d2d2d;
+}
+
+.parser-select:focus {
+    outline: none;
+    border-color: #007acc;
+    box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.2);
+}
+
+.parser-select option {
+    background-color: #2d2d2d;
+    color: #e0e0e0;
+}
+
 .btn {
     padding: 6px 12px;
     border: none;
