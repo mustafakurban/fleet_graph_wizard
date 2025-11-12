@@ -234,10 +234,6 @@ class FleetGraphWizard {
             this.exportJson();
         });
 
-        document.getElementById('exportRos2Btn').addEventListener('click', () => {
-            this.exportRos2();
-        });
-
         // Edit controls
         document.getElementById('alignHorizontalBtn').addEventListener('click', () => this.alignNodesHorizontal());
         document.getElementById('alignVerticalBtn').addEventListener('click', () => this.alignNodesVertical());
@@ -1171,8 +1167,10 @@ class FleetGraphWizard {
         }
 
         // Clear selection
-        if (this.selectedNodes.length > 0) {
+        if (this.selectedNodes.length > 0 || this.selectedPaths.length > 0 || this.selectedPath) {
             this.selectedNodes = [];
+            this.selectedPaths = [];
+            this.selectedPath = null;
             this.updateStatus('Selection cleared');
             this.render();
             return;
@@ -1230,9 +1228,26 @@ class FleetGraphWizard {
     snapPointToGrid(point) {
         if (!this.snapToGrid) return point;
 
+        // Calculate grid offset based on map origin (world coordinates)
+        let gridOffsetX = 0;
+        let gridOffsetY = 0;
+
+        if (this.mapYaml && this.mapYaml.origin) {
+            const originX = this.mapYaml.origin[0]; // meters
+            const originY = this.mapYaml.origin[1]; // meters
+
+            // Canvas pixel where world (0,0) appears
+            const worldZeroX = -originX / this.mapYaml.resolution;
+            const worldZeroY = this.mapImage.height + (originY / this.mapYaml.resolution);
+
+            // Offset to align with world coordinate grid
+            gridOffsetX = worldZeroX % this.gridSize;
+            gridOffsetY = worldZeroY % this.gridSize;
+        }
+
         return {
-            x: Math.round(point.x / this.gridSize) * this.gridSize,
-            y: Math.round(point.y / this.gridSize) * this.gridSize
+            x: Math.round((point.x - gridOffsetX) / this.gridSize) * this.gridSize + gridOffsetX,
+            y: Math.round((point.y - gridOffsetY) / this.gridSize) * this.gridSize + gridOffsetY
         };
     }
 
@@ -1682,8 +1697,23 @@ class FleetGraphWizard {
         // Try to select node first
         const node = this.findNodeAt(point);
         if (node) {
-            this.selectedNode = node;
-            this.showNodeModal();
+            if (shiftKey) {
+                // Multi-select nodes
+                const index = this.selectedNodes.findIndex(n => n.id === node.id);
+                if (index >= 0) {
+                    this.selectedNodes.splice(index, 1);
+                } else {
+                    this.selectedNodes.push(node);
+                }
+                this.updateStatus(`Selected ${this.selectedNodes.length} node(s)`);
+                this.render();
+            } else {
+                // Single select node - just select, don't open modal
+                this.selectedNode = node;
+                this.selectedNodes = [node];
+                this.updateStatus(`Selected node: ${node.name}. Double-click to edit properties.`);
+                this.render();
+            }
             return;
         }
 
@@ -1701,10 +1731,11 @@ class FleetGraphWizard {
                 this.updateStatus(`Selected ${this.selectedPaths.length} path(s)`);
                 this.render();
             } else {
-                // Single select - open modal
+                // Single select path - just select, don't open modal
                 this.selectedPath = path;
                 this.selectedPaths = [path];
-                this.showPathModal();
+                this.updateStatus(`Selected path: ${path.name}. Double-click to edit properties.`);
+                this.render();
             }
         }
     }
@@ -1756,7 +1787,7 @@ class FleetGraphWizard {
         });
     }
 
-    findPathAt(point, threshold = 10) {
+    findPathAt(point, threshold = 20) {
         return this.paths.find(path => {
             const from = this.nodes.find(n => n.id === path.from);
             const to = this.nodes.find(n => n.id === path.to);
@@ -2047,10 +2078,30 @@ class FleetGraphWizard {
     }
 
     drawGrid(ctx) {
-        const startX = Math.floor(-this.offset.x / this.scale / this.gridSize) * this.gridSize;
-        const startY = Math.floor(-this.offset.y / this.scale / this.gridSize) * this.gridSize;
-        const endX = startX + (this.canvas.width / this.scale) + this.gridSize;
-        const endY = startY + (this.canvas.height / this.scale) + this.gridSize;
+        // Calculate grid offset based on map origin (world coordinates)
+        let gridOffsetX = 0;
+        let gridOffsetY = 0;
+
+        if (this.mapYaml && this.mapYaml.origin) {
+            // Convert map origin from world coordinates to canvas pixels
+            // origin[0] is x in world coords, origin[1] is y in world coords
+            // We need to find where world coordinate (0,0) is on the canvas
+            const originX = this.mapYaml.origin[0]; // meters
+            const originY = this.mapYaml.origin[1]; // meters
+
+            // Canvas pixel where world (0,0) appears
+            const worldZeroX = -originX / this.mapYaml.resolution;
+            const worldZeroY = this.mapImage.height + (originY / this.mapYaml.resolution);
+
+            // Offset grid so it aligns with world coordinate grid
+            gridOffsetX = worldZeroX % this.gridSize;
+            gridOffsetY = worldZeroY % this.gridSize;
+        }
+
+        const startX = Math.floor(-this.offset.x / this.scale / this.gridSize) * this.gridSize + gridOffsetX;
+        const startY = Math.floor(-this.offset.y / this.scale / this.gridSize) * this.gridSize + gridOffsetY;
+        const endX = startX + (this.canvas.width / this.scale) + this.gridSize * 2;
+        const endY = startY + (this.canvas.height / this.scale) + this.gridSize * 2;
 
         ctx.strokeStyle = 'rgba(100, 100, 100, 0.2)';
         ctx.lineWidth = 1 / this.scale;
@@ -2268,14 +2319,8 @@ class FleetGraphWizard {
 
         // Draw node circle (if enabled)
         if (this.showNodePoints) {
-            // Node color based on type
-            let color;
-            switch (node.type) {
-                case 'charging': color = '#28a745'; break;
-                case 'pickup': color = '#ffc107'; break;
-                case 'dropoff': color = '#17a2b8'; break;
-                default: color = '#007acc';
-            }
+            // Use consistent color for all nodes
+            const color = '#007acc';
 
             // Draw glow effect for selected nodes with pulse animation
             if (isSelected) {
@@ -2313,25 +2358,10 @@ class FleetGraphWizard {
                 ctx.arc(node.x + radius - 2, node.y - radius + 2, 3, 0, Math.PI * 2);
                 ctx.fill();
             }
-
-            // Draw indicators
-            if (node.noWaiting) {
-                ctx.strokeStyle = '#ff0000';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.moveTo(node.x - radius - 3, node.y - radius - 3);
-                ctx.lineTo(node.x + radius + 3, node.y + radius + 3);
-                ctx.stroke();
-            }
-
-            if (node.isParkingSpot) {
-                ctx.fillStyle = '#fff';
-                ctx.font = 'bold 12px Arial';
-                ctx.fillText('P', node.x - 4, node.y + 4);
-            }
         }
 
         // Draw name with background for better visibility (if enabled)
+        // Draw names BEFORE icons so icons appear on top
         if (this.showNodeNames) {
             ctx.font = 'bold 12px Arial';
             const textWidth = ctx.measureText(node.name).width;
@@ -2354,6 +2384,203 @@ class FleetGraphWizard {
             ctx.fillText(node.name, node.x + radius + offset + padding, node.y);
             ctx.textBaseline = 'alphabetic'; // Reset to default
         }
+
+        // Draw type icons around the node AFTER names so they appear on top
+        if (this.showNodePoints) {
+            this.drawNodeIcons(node, radius);
+        }
+    }
+
+    drawNodeIcons(node, nodeRadius) {
+        const iconOffset = nodeRadius + 14; // Distance from node center
+        const iconSize = 10;
+        const diagonalOffset = iconOffset * 0.85; // Increased for better diagonal spacing
+
+        // Draw type-specific icon
+        switch (node.type) {
+            case 'charging':
+                // Lightning bolt icon for charging station - TOP
+                this.drawChargingIcon(node.x, node.y - iconOffset, iconSize);
+                break;
+            case 'pickup':
+                // Up arrow icon for pickup point - RIGHT
+                this.drawPickupIcon(node.x + iconOffset, node.y, iconSize);
+                break;
+            case 'dropoff':
+                // Down arrow icon for dropoff point - LEFT
+                this.drawDropoffIcon(node.x - iconOffset, node.y, iconSize);
+                break;
+        }
+
+        // Draw parking icon if it's a parking spot (can combine with other types)
+        if (node.isParkingSpot) {
+            // BOTTOM position
+            this.drawParkingIcon(node.x, node.y + iconOffset, iconSize);
+        }
+
+        // Draw no-waiting icon - use diagonal position that doesn't overlap with type icons
+        if (node.noWaiting) {
+            // Choose diagonal position based on what type icon exists
+            let noWaitX, noWaitY;
+
+            if (node.type === 'charging') {
+                // If charging (top), put no-waiting at bottom-right diagonal
+                noWaitX = node.x + diagonalOffset;
+                noWaitY = node.y + diagonalOffset;
+            } else if (node.type === 'pickup') {
+                // If pickup (right), put no-waiting at top-left diagonal
+                noWaitX = node.x - diagonalOffset;
+                noWaitY = node.y - diagonalOffset;
+            } else if (node.type === 'dropoff') {
+                // If dropoff (left), put no-waiting at top-right diagonal
+                noWaitX = node.x + diagonalOffset;
+                noWaitY = node.y - diagonalOffset;
+            } else {
+                // Default: top-right diagonal
+                noWaitX = node.x + diagonalOffset;
+                noWaitY = node.y - diagonalOffset;
+            }
+
+            this.drawNoWaitingIcon(noWaitX, noWaitY, iconSize);
+        }
+    }
+
+    drawChargingIcon(x, y, size) {
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.translate(x, y);
+
+        // Draw circle background
+        ctx.fillStyle = '#28a745';
+        ctx.beginPath();
+        ctx.arc(0, 0, size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Draw lightning bolt
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.moveTo(-2, -5);
+        ctx.lineTo(2, -1);
+        ctx.lineTo(0, -1);
+        ctx.lineTo(2, 5);
+        ctx.lineTo(-2, 1);
+        ctx.lineTo(0, 1);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.restore();
+    }
+
+    drawPickupIcon(x, y, size) {
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.translate(x, y);
+
+        // Draw circle background
+        ctx.fillStyle = '#ffc107';
+        ctx.beginPath();
+        ctx.arc(0, 0, size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Draw up arrow
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.moveTo(0, -5);
+        ctx.lineTo(4, 1);
+        ctx.lineTo(1.5, 1);
+        ctx.lineTo(1.5, 5);
+        ctx.lineTo(-1.5, 5);
+        ctx.lineTo(-1.5, 1);
+        ctx.lineTo(-4, 1);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.restore();
+    }
+
+    drawDropoffIcon(x, y, size) {
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.translate(x, y);
+
+        // Draw circle background
+        ctx.fillStyle = '#17a2b8';
+        ctx.beginPath();
+        ctx.arc(0, 0, size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Draw down arrow
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.moveTo(0, 5);
+        ctx.lineTo(4, -1);
+        ctx.lineTo(1.5, -1);
+        ctx.lineTo(1.5, -5);
+        ctx.lineTo(-1.5, -5);
+        ctx.lineTo(-1.5, -1);
+        ctx.lineTo(-4, -1);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.restore();
+    }
+
+    drawParkingIcon(x, y, size) {
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.translate(x, y);
+
+        // Draw circle background
+        ctx.fillStyle = '#6c757d';
+        ctx.beginPath();
+        ctx.arc(0, 0, size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Draw P letter
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('P', 0, 0);
+
+        ctx.restore();
+    }
+
+    drawNoWaitingIcon(x, y, size) {
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.translate(x, y);
+
+        // Draw circle background
+        ctx.fillStyle = '#dc3545';
+        ctx.beginPath();
+        ctx.arc(0, 0, size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Draw diagonal line (no waiting symbol)
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-5, -5);
+        ctx.lineTo(5, 5);
+        ctx.stroke();
+
+        ctx.restore();
     }
 
     drawPath(path) {
@@ -2391,12 +2618,12 @@ class FleetGraphWizard {
             ctx.lineTo(toNode.x, toNode.y);
             ctx.stroke();
 
-            // Draw arrow
-            this.drawArrow(fromNode, toNode, isSelected);
+            // Draw animated arrows with speed-based animation
+            this.drawAnimatedArrows(fromNode, toNode, isSelected, path.speedLimit);
 
-            // Draw reverse arrow if bidirectional
+            // Draw reverse arrows if bidirectional
             if (path.bidirectional) {
-                this.drawArrow(toNode, fromNode, isSelected);
+                this.drawAnimatedArrows(toNode, fromNode, isSelected, path.speedLimit);
             }
         }
 
@@ -2452,6 +2679,51 @@ class FleetGraphWizard {
         ctx.fill();
     }
 
+    drawAnimatedArrows(from, to, isSelected = false, speedLimit = 1.0) {
+        const ctx = this.ctx;
+        const angle = Math.atan2(to.y - from.y, to.x - from.x);
+        const distance = Math.sqrt((to.x - from.x) ** 2 + (to.y - from.y) ** 2);
+
+        const arrowLength = 12;
+        const arrowWidth = 6;
+        const spacing = 80; // Distance between arrows
+        const numArrows = Math.max(2, Math.floor(distance / spacing));
+
+        // Animation speed - dynamically based on path speed limit
+        // Base speed for 1.0 m/s, scales linearly with speed limit
+        const baseAnimationSpeed = 0.0005;
+        const animationSpeed = baseAnimationSpeed * speedLimit;
+        const animationOffset = (this.animationTime * animationSpeed) % 1;
+
+        ctx.fillStyle = isSelected ? '#ffff00' : '#00ff00';
+
+        for (let i = 0; i < numArrows; i++) {
+            // Calculate position along the path (0 to 1)
+            let t = (i / numArrows + animationOffset) % 1;
+
+            // Skip arrow if too close to nodes
+            if (t < 0.1 || t > 0.9) continue;
+
+            // Calculate arrow position
+            const arrowX = from.x + (to.x - from.x) * t;
+            const arrowY = from.y + (to.y - from.y) * t;
+
+            // Draw arrow
+            ctx.beginPath();
+            ctx.moveTo(arrowX, arrowY);
+            ctx.lineTo(
+                arrowX - arrowLength * Math.cos(angle) + arrowWidth * Math.sin(angle),
+                arrowY - arrowLength * Math.sin(angle) - arrowWidth * Math.cos(angle)
+            );
+            ctx.lineTo(
+                arrowX - arrowLength * Math.cos(angle) - arrowWidth * Math.sin(angle),
+                arrowY - arrowLength * Math.sin(angle) + arrowWidth * Math.cos(angle)
+            );
+            ctx.closePath();
+            ctx.fill();
+        }
+    }
+
     // === ALIGNMENT TOOLS ===
     alignNodesHorizontal() {
         if (this.selectedNodes.length < 2) {
@@ -2495,10 +2767,27 @@ class FleetGraphWizard {
 
         this.saveState();
 
+        // Calculate grid offset based on map origin (world coordinates)
+        let gridOffsetX = 0;
+        let gridOffsetY = 0;
+
+        if (this.mapYaml && this.mapYaml.origin) {
+            const originX = this.mapYaml.origin[0]; // meters
+            const originY = this.mapYaml.origin[1]; // meters
+
+            // Canvas pixel where world (0,0) appears
+            const worldZeroX = -originX / this.mapYaml.resolution;
+            const worldZeroY = this.mapImage.height + (originY / this.mapYaml.resolution);
+
+            // Offset to align with world coordinate grid
+            gridOffsetX = worldZeroX % this.gridSize;
+            gridOffsetY = worldZeroY % this.gridSize;
+        }
+
         this.selectedNodes.forEach(node => {
-            const snapped = this.snapPointToGrid({x: node.x, y: node.y});
-            node.x = snapped.x;
-            node.y = snapped.y;
+            // Always snap to grid when using this button, regardless of snapToGrid setting
+            node.x = Math.round((node.x - gridOffsetX) / this.gridSize) * this.gridSize + gridOffsetX;
+            node.y = Math.round((node.y - gridOffsetY) / this.gridSize) * this.gridSize + gridOffsetY;
         });
 
         this.showToast(`Aligned ${this.selectedNodes.length} nodes to grid`);
@@ -2550,71 +2839,6 @@ class FleetGraphWizard {
         this.showToast(`Updated ${this.selectedNodes.length} nodes`);
     }
 
-    // === ROS2 EXPORT ===
-    exportRos2() {
-        if (!this.mapYaml) {
-            this.showToast('Load a map first to export ROS2 format');
-            return;
-        }
-
-        const ros2Data = {
-            map: {
-                image: this.mapYaml.image,
-                resolution: this.mapYaml.resolution,
-                origin: this.mapYaml.origin,
-                negate: this.mapYaml.negate || 0,
-                occupied_thresh: this.mapYaml.occupied_thresh || 0.65,
-                free_thresh: this.mapYaml.free_thresh || 0.196
-            },
-            waypoints: this.nodes.map(node => {
-                const worldCoords = this.getWorldCoordinates(node.x, node.y);
-                return {
-                    id: node.name,
-                    position: {
-                        x: worldCoords.x,
-                        y: worldCoords.y,
-                        z: 0.0
-                    },
-                    orientation: {
-                        x: 0.0,
-                        y: 0.0,
-                        z: 0.0,
-                        w: 1.0
-                    },
-                    type: node.type,
-                    properties: {
-                        no_waiting: node.noWaiting,
-                        is_parking_spot: node.isParkingSpot,
-                        max_robots: node.maxRobots
-                    }
-                };
-            }),
-            edges: this.paths.map(path => {
-                const fromNode = this.nodes.find(n => n.id === path.from);
-                const toNode = this.nodes.find(n => n.id === path.to);
-                const distance = this.calculatePathDistance(fromNode, toNode);
-
-                return {
-                    from: fromNode.name,
-                    to: toNode.name,
-                    bidirectional: path.bidirectional,
-                    speed_limit: path.speedLimit,
-                    width: path.width,
-                    distance: distance.meters || distance.pixels
-                };
-            })
-        };
-
-        const blob = new Blob([JSON.stringify(ros2Data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'fleet_graph_ros2.json';
-        a.click();
-        URL.revokeObjectURL(url);
-
-        this.showToast('Exported to ROS2 format');
-    }
 
     // === GRAPH VALIDATION ===
     validateGraph() {
