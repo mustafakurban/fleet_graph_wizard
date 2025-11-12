@@ -43,6 +43,7 @@ class FleetGraphWizard {
         this.showPathNames = false;
         this.showNodePoints = true;
         this.showNodeNames = true;
+        this.showNodeIcons = true;
 
         // Multi-select
         this.selectedNodes = [];
@@ -102,6 +103,7 @@ class FleetGraphWizard {
         this.setupEventListeners();
         this.initializeParsers();
         this.disableTools();
+        this.setTool('node'); // Initialize tool indicator in status bar
         this.startAnimationLoop();
         this.render();
     }
@@ -266,12 +268,10 @@ class FleetGraphWizard {
         // Tool selection
         document.querySelectorAll('.tool-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
-                e.target.classList.add('active');
-                this.currentTool = e.target.dataset.tool;
+                const tool = e.target.closest('.tool-btn').dataset.tool;
+                this.setTool(tool);
                 this.pathStart = null;
                 this.tempPathEnd = null;
-                this.updateStatus(`Tool: ${this.currentTool}`);
                 this.render();
             });
         });
@@ -301,6 +301,11 @@ class FleetGraphWizard {
 
         document.getElementById('showNodeNamesToggle').addEventListener('change', (e) => {
             this.showNodeNames = e.target.checked;
+            this.render();
+        });
+
+        document.getElementById('showNodeIconsToggle').addEventListener('change', (e) => {
+            this.showNodeIcons = e.target.checked;
             this.render();
         });
 
@@ -754,6 +759,7 @@ class FleetGraphWizard {
                         // Add to selection
                         this.selectedNodes.push(clickedNode);
                     }
+                    this.updateSelectionCount();
                     this.render();
                     return;
                 } else {
@@ -917,6 +923,7 @@ class FleetGraphWizard {
                     this.selectedNodes.push(node);
                 }
             });
+            this.updateSelectionCount();
 
             if (this.selectedNodes.length > 0) {
                 this.updateStatus(`Selected ${this.selectedNodes.length} node(s)`);
@@ -1003,6 +1010,11 @@ class FleetGraphWizard {
     }
 
     handleKeyDown(e) {
+        // Check if user is typing in an input field or textarea
+        const isInputField = e.target.tagName === 'INPUT' ||
+                            e.target.tagName === 'TEXTAREA' ||
+                            e.target.isContentEditable;
+
         // ESC key - Cancel operations and close modals
         if (e.key === 'Escape') {
             e.preventDefault();
@@ -1020,67 +1032,97 @@ class FleetGraphWizard {
         }
         // Copy/Paste
         else if (e.ctrlKey && e.key === 'c') {
+            // Allow copy in input fields
+            if (isInputField) return;
             e.preventDefault();
             this.copySelected();
         } else if (e.ctrlKey && e.key === 'v') {
+            // Allow paste in input fields
+            if (isInputField) return;
             e.preventDefault();
             this.pasteNode();
         }
         // Delete
         else if (e.key === 'Delete' || e.key === 'Backspace') {
+            // Allow delete/backspace in input fields for text editing
+            if (isInputField) return;
             e.preventDefault();
             this.deleteSelected();
         }
         // Select All
         else if (e.ctrlKey && e.key === 'a') {
+            // Allow select all in input fields
+            if (isInputField) return;
             e.preventDefault();
             this.selectAll();
         }
         // Grid toggle
         else if (e.key === 'g' && !e.ctrlKey) {
+            // Don't trigger shortcuts when typing in input fields
+            if (isInputField) return;
             this.toggleGrid();
         }
         // Snap to grid toggle
         else if (e.key === 's' && !e.ctrlKey) {
+            // Don't trigger shortcuts when typing in input fields
+            if (isInputField) return;
             this.toggleSnapToGrid();
         }
         // Alignment shortcuts
         else if (e.key === 'h' && !e.ctrlKey) {
+            // Don't trigger shortcuts when typing in input fields
+            if (isInputField) return;
             e.preventDefault();
             this.alignNodesHorizontal();
         }
         else if (e.key === 'v' && !e.ctrlKey) {
+            // Don't trigger shortcuts when typing in input fields
+            if (isInputField) return;
             e.preventDefault();
             this.alignNodesVertical();
         }
         // Bulk edit
         else if (e.key === 'b' && !e.ctrlKey) {
+            // Don't trigger shortcuts when typing in input fields
+            if (isInputField) return;
             e.preventDefault();
             this.showBulkEditModal();
         }
         // Validate
         else if (e.key === 't' && !e.ctrlKey) {
+            // Don't trigger shortcuts when typing in input fields
+            if (isInputField) return;
             e.preventDefault();
             this.validateGraph();
         }
         // Tools
         else if (e.key === 'n' && !e.ctrlKey) {
+            // Don't trigger shortcuts when typing in input fields
+            if (isInputField) return;
             e.preventDefault();
             this.setTool('node');
         }
         else if (e.key === 'p' && !e.ctrlKey) {
+            // Don't trigger shortcuts when typing in input fields
+            if (isInputField) return;
             e.preventDefault();
             this.setTool('path');
         }
         else if (e.key === 'e' && !e.ctrlKey) {
+            // Don't trigger shortcuts when typing in input fields
+            if (isInputField) return;
             e.preventDefault();
             this.setTool('select');
         }
         else if (e.key === 'd' && !e.ctrlKey) {
+            // Don't trigger shortcuts when typing in input fields
+            if (isInputField) return;
             e.preventDefault();
             this.setTool('delete');
         }
         else if (e.key === 'm' && !e.ctrlKey) {
+            // Don't trigger shortcuts when typing in input fields
+            if (isInputField) return;
             e.preventDefault();
             this.setTool('measure');
         }
@@ -1111,12 +1153,28 @@ class FleetGraphWizard {
     }
 
     setTool(tool) {
+        this.currentTool = tool;
+
+        // Update button states
         document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
         const btn = document.querySelector(`[data-tool="${tool}"]`);
         if (btn) {
             btn.classList.add('active');
-            this.currentTool = tool;
-            this.updateStatus(`Tool: ${tool}`);
+        }
+
+        // Update status bar with tool name and shortcut
+        const toolInfo = {
+            'node': { name: 'Node', key: 'N', icon: '⬤' },
+            'path': { name: 'Path', key: 'P', icon: '⟶' },
+            'select': { name: 'Select', key: 'E', icon: '⊕' },
+            'delete': { name: 'Delete', key: 'D', icon: '✕' },
+            'measure': { name: 'Measure', key: 'M', icon: '📏' }
+        };
+
+        const info = toolInfo[tool] || { name: tool, key: '', icon: '🛠️' };
+        const toolText = document.getElementById('currentToolText');
+        if (toolText) {
+            toolText.textContent = `${info.icon} Tool: ${info.name}${info.key ? ' (' + info.key + ')' : ''}`;
         }
     }
 
@@ -1883,7 +1941,7 @@ class FleetGraphWizard {
         this.selectedPath.notes = document.getElementById('pathNotes').value;
     }
 
-    exportJson() {
+    async exportJson() {
         const data = {
             metadata: {
                 version: '1.0',
@@ -1898,15 +1956,49 @@ class FleetGraphWizard {
         };
 
         const json = JSON.stringify(data, null, 2);
+        const filename = `fleet_graph_${Date.now()}.json`;
+
+        // Check if File System Access API is supported
+        if ('showSaveFilePicker' in window) {
+            try {
+                const options = {
+                    suggestedName: filename,
+                    types: [{
+                        description: 'JSON Files',
+                        accept: { 'application/json': ['.json'] }
+                    }]
+                };
+
+                const fileHandle = await window.showSaveFilePicker(options);
+                const writable = await fileHandle.createWritable();
+                await writable.write(json);
+                await writable.close();
+
+                this.updateStatus('Graph exported successfully to selected location');
+            } catch (err) {
+                // User cancelled or error occurred
+                if (err.name !== 'AbortError') {
+                    console.error('Error saving file:', err);
+                    this.updateStatus('Error saving file: ' + err.message);
+                    // Fallback to download
+                    this.fallbackDownload(json, filename);
+                }
+            }
+        } else {
+            // Fallback for browsers that don't support File System Access API
+            this.updateStatus('Your browser doesn\'t support direct file saving. Using download instead.');
+            this.fallbackDownload(json, filename);
+        }
+    }
+
+    fallbackDownload(json, filename) {
         const blob = new Blob([json], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `fleet_graph_${Date.now()}.json`;
+        a.download = filename;
         a.click();
         URL.revokeObjectURL(url);
-
-        this.updateStatus('Graph exported successfully');
     }
 
     initializeParsers() {
@@ -1973,10 +2065,17 @@ class FleetGraphWizard {
             this.updateStatus(`Importing graph using ${this.currentParser.name}...`);
 
             // Read file content
-            const text = await file.text();
+            // For binary formats (SQLite), read as ArrayBuffer
+            // For text formats (JSON, CSV), read as text
+            let fileContent;
+            if (this.currentParser.id === 'sqlite') {
+                fileContent = await file.arrayBuffer();
+            } else {
+                fileContent = await file.text();
+            }
 
             // Parse using selected parser
-            const data = await this.currentParser.parse(text, file.name);
+            const data = await this.currentParser.parse(fileContent, file.name);
 
             // Load the standardized graph data
             this.loadGraphData(data);
@@ -1994,6 +2093,18 @@ class FleetGraphWizard {
     loadGraphData(data) {
         // Load nodes
         this.nodes = data.nodes || [];
+
+        // Convert world coordinates to canvas coordinates if needed
+        this.nodes.forEach(node => {
+            if (node.metadata?.coordinateType === 'world' && this.mapYaml && this.mapImage) {
+                // Node has world coordinates, convert to canvas coordinates
+                const canvasCoords = this.worldToCanvas(node.x, node.y);
+                node.x = canvasCoords.x;
+                node.y = canvasCoords.y;
+                // Remove the marker since we've converted
+                delete node.metadata.coordinateType;
+            }
+        });
 
         // Load paths
         this.paths = data.paths || [];
@@ -2021,6 +2132,24 @@ class FleetGraphWizard {
 
         // Save state for undo
         this.saveState();
+    }
+
+    worldToCanvas(worldX, worldY) {
+        if (!this.mapYaml || !this.mapImage) {
+            return { x: worldX, y: worldY };
+        }
+
+        const resolution = this.mapYaml.resolution;
+        const origin = this.mapYaml.origin || [0, 0, 0];
+
+        // Reverse of getWorldCoordinates
+        // worldX = canvasX * resolution + origin[0]
+        // worldY = (mapHeight - canvasY) * resolution + origin[1]
+
+        const canvasX = (worldX - origin[0]) / resolution;
+        const canvasY = this.mapImage.height - (worldY - origin[1]) / resolution;
+
+        return { x: canvasX, y: canvasY };
     }
 
     async importJson(file) {
@@ -2479,7 +2608,7 @@ class FleetGraphWizard {
         }
 
         // Draw type icons around the node AFTER names so they appear on top
-        if (this.showNodePoints) {
+        if (this.showNodeIcons) {
             this.drawNodeIcons(node, radius);
         }
     }
@@ -3162,6 +3291,19 @@ class FleetGraphWizard {
 
     updateStatus(message) {
         document.getElementById('statusText').textContent = message;
+    }
+
+    updateSelectionCount() {
+        const selectionText = document.getElementById('selectionText');
+        if (selectionText) {
+            const count = this.selectedNodes.length;
+            if (count > 0) {
+                selectionText.textContent = `Selected: ${count}`;
+                selectionText.style.display = 'inline';
+            } else {
+                selectionText.style.display = 'none';
+            }
+        }
     }
 }
 

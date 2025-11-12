@@ -11,11 +11,17 @@
 // Import all parser classes
 // Note: In browser environment, these will be loaded via script tags in index.html
 
+// Create singleton instances (created once, reused throughout the app)
+// This ensures that filter settings and other state are preserved
+let parserInstances = null;
+
 /**
- * Get all registered parsers
+ * Initialize parser instances (called once)
  * @returns {BaseParser[]} Array of parser instances
  */
-function getAllParsers() {
+function initializeParsers() {
+    if (parserInstances) return parserInstances;
+
     const parsers = [];
 
     // Add built-in parsers
@@ -37,7 +43,16 @@ function getAllParsers() {
     //     parsers.push(new MyCustomParser());
     // }
 
+    parserInstances = parsers;
     return parsers;
+}
+
+/**
+ * Get all registered parsers
+ * @returns {BaseParser[]} Array of parser instances
+ */
+function getAllParsers() {
+    return initializeParsers();
 }
 
 /**

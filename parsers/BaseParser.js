@@ -62,7 +62,7 @@ class BaseParser {
      *             name: string,
      *             x: number,      // World coordinates (meters)
      *             y: number,      // World coordinates (meters)
-     *             type: string,   // 'normal', 'charging', 'pickup', 'dropoff'
+     *             type: string,   // 'target', 'charging', 'pickup', 'dropoff', 'other'
      *             maxRobots: number (optional, default: 1),
      *             parkingSpot: boolean (optional, default: false),
      *             noWaiting: boolean (optional, default: false)
@@ -110,7 +110,7 @@ class BaseParser {
                 if (!node.id) errors.push(`Node at index ${index} missing "id"`);
                 if (typeof node.x !== 'number') errors.push(`Node "${node.id || index}" missing valid "x" coordinate`);
                 if (typeof node.y !== 'number') errors.push(`Node "${node.id || index}" missing valid "y" coordinate`);
-                if (node.type && !['normal', 'charging', 'pickup', 'dropoff'].includes(node.type)) {
+                if (node.type && !['normal', 'target', 'charging', 'pickup', 'dropoff', 'other'].includes(node.type)) {
                     errors.push(`Node "${node.id || index}" has invalid type "${node.type}"`);
                 }
             });

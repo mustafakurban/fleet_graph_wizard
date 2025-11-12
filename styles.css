@@ -172,10 +172,79 @@ header p {
     background-color: #218838;
 }
 
+/* Tool button layout */
+.tool-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 65px;
+    padding: 8px 12px;
+    position: relative;
+}
+
+.tool-icon {
+    font-size: 20px;
+    line-height: 1;
+}
+
+.tool-label {
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
 .tool-btn.active {
     background-color: #007acc;
     color: white;
-    box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.3);
+    box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.4), 0 4px 12px rgba(0, 122, 204, 0.3);
+    transform: translateY(-1px);
+    border-color: #0096ff;
+}
+
+.tool-btn.active .tool-icon {
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+}
+
+.tool-btn:hover:not(.active) {
+    background-color: #2d4a5e;
+    border-color: #007acc;
+}
+
+/* Action button layout (Edit and View sections) */
+.action-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 60px;
+    padding: 8px 10px;
+}
+
+.action-icon {
+    font-size: 18px;
+    line-height: 1;
+}
+
+.action-label {
+    font-size: 9px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.action-btn:hover {
+    background-color: #2d4a5e;
+    border-color: #007acc;
+    transform: translateY(-1px);
 }
 
 .main-content {
@@ -322,13 +391,28 @@ header p {
 .status-bar {
     background-color: #007acc;
     color: white;
-    padding: 3px 15px;
+    padding: 5px 15px;
     display: flex;
     justify-content: space-between;
-    font-size: 10px;
+    gap: 20px;
+    font-size: 11px;
     align-items: center;
-    height: 22px;
+    height: 28px;
     box-sizing: border-box;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+.status-bar span {
+    white-space: nowrap;
+    padding: 2px 8px;
+    border-radius: 3px;
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.status-highlight {
+    background-color: rgba(255, 255, 255, 0.2) !important;
+    font-weight: 600;
+    border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
 /* Modal styles */

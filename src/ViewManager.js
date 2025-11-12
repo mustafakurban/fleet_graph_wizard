@@ -26,6 +26,7 @@ class ViewManager {
         this.showPathNames = false;
         this.showNodePoints = true;
         this.showNodeNames = true;
+        this.showNodeIcons = true;
         this.showGrid = false;
         this.showMinimap = true;
 
@@ -275,6 +276,12 @@ class ViewManager {
             case 'dropoff':
                 ctx.fillStyle = isSelected ? '#FF6B6B' : '#FF0000';
                 break;
+            case 'target':
+                ctx.fillStyle = isSelected ? '#00BFFF' : '#007ACC';
+                break;
+            case 'other':
+                ctx.fillStyle = isSelected ? '#9370DB' : '#8B008B';
+                break;
             default:
                 ctx.fillStyle = isSelected ? '#00BFFF' : '#007ACC';
         }
@@ -292,7 +299,9 @@ class ViewManager {
         ctx.stroke();
 
         // Draw icons
-        this.drawNodeIcons(node, radius);
+        if (this.showNodeIcons) {
+            this.drawNodeIcons(node, radius);
+        }
 
         // Draw name
         if (this.showNodeNames) {

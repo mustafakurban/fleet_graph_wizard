@@ -25,6 +25,8 @@
                     <option value="json">JSON Format</option>
                 </select>
 
+                <button id="filterBtn" class="btn" title="Set import filters (SQLite only)" style="display: none;">⚙️ Filter</button>
+
                 <button id="importJsonBtn" class="btn btn-secondary" title="Import graph using selected format">Import</button>
                 <input type="file" id="graphInput" accept=".json" style="display: none;">
 
@@ -34,27 +36,72 @@
             </div>
 
             <div class="tool-controls" data-label="🛠️ Tools">
-                <button id="addNodeBtn" class="btn tool-btn active" data-tool="node" title="Add new nodes by clicking on the map">+ Node</button>
-                <button id="addPathBtn" class="btn tool-btn" data-tool="path" title="Draw paths between nodes">+ Path</button>
-                <button id="selectBtn" class="btn tool-btn" data-tool="select" title="Select and drag nodes (Shift for multi-select)">Select</button>
-                <button id="deleteBtn" class="btn tool-btn" data-tool="delete" title="Delete nodes or paths by clicking">Delete</button>
-                <button id="measureBtn" class="btn tool-btn" data-tool="measure" title="Measure distance between two points">Measure</button>
+                <button id="addNodeBtn" class="btn tool-btn active" data-tool="node" title="Add Node (N) - Click on map to add nodes">
+                    <span class="tool-icon">⬤</span>
+                    <span class="tool-label">Node</span>
+                </button>
+                <button id="addPathBtn" class="btn tool-btn" data-tool="path" title="Add Path (P) - Click two nodes to connect">
+                    <span class="tool-icon">⟶</span>
+                    <span class="tool-label">Path</span>
+                </button>
+                <button id="selectBtn" class="btn tool-btn" data-tool="select" title="Select (E) - Click to select, drag to move (Shift for multi-select)">
+                    <span class="tool-icon">⊕</span>
+                    <span class="tool-label">Select</span>
+                </button>
+                <button id="deleteBtn" class="btn tool-btn" data-tool="delete" title="Delete (D) - Click to delete nodes or paths">
+                    <span class="tool-icon">✕</span>
+                    <span class="tool-label">Delete</span>
+                </button>
+                <button id="measureBtn" class="btn tool-btn" data-tool="measure" title="Measure (M) - Click two points to measure distance">
+                    <span class="tool-icon">📏</span>
+                    <span class="tool-label">Measure</span>
+                </button>
             </div>
 
             <div class="edit-controls" data-label="✏️ Edit">
-                <button id="alignHorizontalBtn" class="btn" title="Align selected nodes horizontally">↔ H</button>
-                <button id="alignVerticalBtn" class="btn" title="Align selected nodes vertically">↕ V</button>
-                <button id="alignGridBtn" class="btn" title="Align selected nodes to grid">⊞ Grid</button>
-                <button id="bulkEditBtn" class="btn" title="Edit properties for all selected nodes">Bulk</button>
-                <button id="validateGraphBtn" class="btn" title="Validate graph for errors">✓ Validate</button>
+                <button id="alignHorizontalBtn" class="btn action-btn" title="Align Horizontal (H) - Align selected nodes horizontally">
+                    <span class="action-icon">↔</span>
+                    <span class="action-label">H-Align</span>
+                </button>
+                <button id="alignVerticalBtn" class="btn action-btn" title="Align Vertical (V) - Align selected nodes vertically">
+                    <span class="action-icon">↕</span>
+                    <span class="action-label">V-Align</span>
+                </button>
+                <button id="alignGridBtn" class="btn action-btn" title="Align to Grid - Snap selected nodes to grid">
+                    <span class="action-icon">⊞</span>
+                    <span class="action-label">Grid</span>
+                </button>
+                <button id="bulkEditBtn" class="btn action-btn" title="Bulk Edit (B) - Edit properties for all selected nodes">
+                    <span class="action-icon">📝</span>
+                    <span class="action-label">Bulk</span>
+                </button>
+                <button id="validateGraphBtn" class="btn action-btn" title="Validate (T) - Check graph for errors">
+                    <span class="action-icon">✓</span>
+                    <span class="action-label">Check</span>
+                </button>
             </div>
 
             <div class="view-controls" data-label="👁️ View">
-                <button id="zoomInBtn" class="btn" title="Zoom in (+)">+ Zoom</button>
-                <button id="zoomOutBtn" class="btn" title="Zoom out (-)">- Zoom</button>
-                <button id="resetViewBtn" class="btn" title="Reset view to 100%">Reset</button>
-                <button id="fitAllBtn" class="btn" title="Fit all nodes in view">Fit All</button>
-                <button id="focusSelectedBtn" class="btn" title="Center view on selected nodes">Focus</button>
+                <button id="zoomInBtn" class="btn action-btn" title="Zoom In - Zoom into the map">
+                    <span class="action-icon">🔍+</span>
+                    <span class="action-label">Zoom+</span>
+                </button>
+                <button id="zoomOutBtn" class="btn action-btn" title="Zoom Out - Zoom out of the map">
+                    <span class="action-icon">🔍-</span>
+                    <span class="action-label">Zoom-</span>
+                </button>
+                <button id="resetViewBtn" class="btn action-btn" title="Reset View - Reset zoom to 100%">
+                    <span class="action-icon">↺</span>
+                    <span class="action-label">Reset</span>
+                </button>
+                <button id="fitAllBtn" class="btn action-btn" title="Fit All - Fit all nodes in view">
+                    <span class="action-icon">⛶</span>
+                    <span class="action-label">Fit All</span>
+                </button>
+                <button id="focusSelectedBtn" class="btn action-btn" title="Focus Selected - Center view on selected nodes">
+                    <span class="action-icon">◎</span>
+                    <span class="action-label">Focus</span>
+                </button>
             </div>
         </div>
 
@@ -84,6 +131,10 @@
                         <label>
                             <input type="checkbox" id="showNodeNamesToggle" checked>
                             Names
+                        </label>
+                        <label>
+                            <input type="checkbox" id="showNodeIconsToggle" checked>
+                            Icons
                         </label>
                     </div>
                     <div class="viz-section">
@@ -142,9 +193,11 @@
 
         <div class="status-bar">
             <span id="statusText">Ready - Load a map to begin</span>
+            <span id="currentToolText" class="status-highlight">🛠️ Tool: Node (N)</span>
             <span id="coordsText">X: 0, Y: 0</span>
             <span id="zoomText">Zoom: 100%</span>
             <span id="mapInfoText">No map loaded</span>
+            <span id="selectionText" style="display: none;">Selected: 0</span>
         </div>
     </div>
 
@@ -159,10 +212,11 @@
 
                 <label for="nodeType">Node Type:</label>
                 <select id="nodeType">
-                    <option value="normal">Normal</option>
+                    <option value="target">Target</option>
                     <option value="charging">Charging Station</option>
                     <option value="pickup">Pickup Point</option>
                     <option value="dropoff">Dropoff Point</option>
+                    <option value="other">Other</option>
                 </select>
 
                 <label>
@@ -229,10 +283,11 @@
                 <label for="bulkNodeType">Node Type:</label>
                 <select id="bulkNodeType">
                     <option value="">-- Keep Current --</option>
-                    <option value="normal">Normal</option>
+                    <option value="target">Target</option>
                     <option value="charging">Charging Station</option>
                     <option value="pickup">Pickup Point</option>
                     <option value="dropoff">Dropoff Point</option>
+                    <option value="other">Other</option>
                 </select>
 
                 <label>
@@ -265,6 +320,37 @@
             <div class="modal-buttons">
                 <button type="button" class="btn btn-primary" id="closeValidationBtn">Close</button>
             </div>
+        </div>
+    </div>
+
+    <!-- SQLite Filter Modal -->
+    <div id="sqliteFilterModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>SQLite Import Filters</h2>
+            <form id="sqliteFilterForm">
+                <p style="color: #888; font-size: 12px; margin-bottom: 15px;">
+                    Enter specific values to filter targets. Leave empty to import all. Filters will be applied using AND logic.
+                </p>
+
+                <label for="filterSite">Site:</label>
+                <input type="text" id="filterSite" placeholder="e.g., warehouse_A">
+
+                <label for="filterFloor">Floor:</label>
+                <input type="text" id="filterFloor" placeholder="e.g., floor_1">
+
+                <label for="filterType">Type:</label>
+                <input type="text" id="filterType" placeholder="e.g., table">
+
+                <label for="filterCustom">Custom SQL WHERE clause (advanced):</label>
+                <input type="text" id="filterCustom" placeholder="e.g., yaw_deg > 0 AND px > 10">
+
+                <div class="modal-buttons">
+                    <button type="submit" class="btn btn-primary">Apply Filters</button>
+                    <button type="button" class="btn" id="clearFiltersBtn">Clear All</button>
+                    <button type="button" class="btn btn-secondary" id="cancelFilterBtn">Cancel</button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -350,9 +436,75 @@
     <script>
         // Wait for app to initialize, then setup parser selector
         document.addEventListener('DOMContentLoaded', () => {
+            const filterBtn = document.getElementById('filterBtn');
+            const filterModal = document.getElementById('sqliteFilterModal');
+
             // Parser selector change event
             document.getElementById('parserSelect').addEventListener('change', (e) => {
                 window.app.onParserChange(e.target.value);
+
+                // Show filter button only for SQLite parser
+                if (e.target.value === 'sqlite') {
+                    filterBtn.style.display = 'inline-block';
+                } else {
+                    filterBtn.style.display = 'none';
+                }
+            });
+
+            // Filter button click
+            filterBtn.addEventListener('click', () => {
+                filterModal.style.display = 'block';
+            });
+
+            // Close filter modal
+            filterModal.querySelector('.close').addEventListener('click', () => {
+                filterModal.style.display = 'none';
+            });
+
+            document.getElementById('cancelFilterBtn').addEventListener('click', () => {
+                filterModal.style.display = 'none';
+            });
+
+            // Apply filters
+            document.getElementById('sqliteFilterForm').addEventListener('submit', (e) => {
+                e.preventDefault();
+
+                const parser = getParserById('sqlite');
+                if (parser) {
+                    const filters = {
+                        site: document.getElementById('filterSite').value.trim() || null,
+                        floor: document.getElementById('filterFloor').value.trim() || null,
+                        type: document.getElementById('filterType').value.trim() || null,
+                        custom: document.getElementById('filterCustom').value.trim() || null
+                    };
+
+                    parser.setFilters(filters);
+                    console.log('SQLite filters applied:', filters);
+
+                    filterModal.style.display = 'none';
+                    alert('Filters applied! They will be used on the next import.');
+                }
+            });
+
+            // Clear filters
+            document.getElementById('clearFiltersBtn').addEventListener('click', () => {
+                document.getElementById('filterSite').value = '';
+                document.getElementById('filterFloor').value = '';
+                document.getElementById('filterType').value = '';
+                document.getElementById('filterCustom').value = '';
+
+                const parser = getParserById('sqlite');
+                if (parser) {
+                    parser.clearFilters();
+                    console.log('SQLite filters cleared');
+                }
+            });
+
+            // Close modal on ESC
+            window.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && filterModal.style.display === 'block') {
+                    filterModal.style.display = 'none';
+                }
             });
         });
     </script>
